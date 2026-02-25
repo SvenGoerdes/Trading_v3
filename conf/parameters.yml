@@ -1,0 +1,92 @@
+# ──────────────────────────────────────────────
+# Trading Universe
+# ──────────────────────────────────────────────
+symbols:
+  - BTC/USDT
+  - ETH/USDT
+  - BNB/USDT
+  - SOL/USDT
+  - XRP/USDT
+  - ADA/USDT
+  - DOGE/USDT
+  - AVAX/USDT
+  - DOT/USDT
+  - LINK/USDT
+
+timeframe: "1h"
+
+# ──────────────────────────────────────────────
+# Portfolio
+# ──────────────────────────────────────────────
+initial_balance: 10000.0
+trading_fee_pct: 0.001       # 0.1% taker fee
+slippage_pct: 0.0005         # 0.05% slippage estimate
+
+# ──────────────────────────────────────────────
+# Data Engineering
+# ──────────────────────────────────────────────
+data:
+  lookback_days: 730          # 2 years of history
+  missing_candle_policy: "ffill"  # forward-fill missing candles
+  max_missing_gap: 5          # max consecutive missing candles before raising error
+
+# ──────────────────────────────────────────────
+# Technical Indicators
+# ──────────────────────────────────────────────
+indicators:
+  sma_windows: [7, 25, 99]
+  ema_windows: [7, 25, 99]
+  rsi_window: 14
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  bollinger:
+    window: 20
+    std_dev: 2
+  atr_window: 14
+  obv: true
+  vwap: true
+
+# ──────────────────────────────────────────────
+# TD3 Hyperparameters
+# ──────────────────────────────────────────────
+td3:
+  learning_rate_actor: 0.0001
+  learning_rate_critic: 0.001
+  gamma: 0.99
+  tau: 0.005
+  batch_size: 256
+  buffer_size: 1000000
+  learning_starts: 10000
+  train_freq: 1
+  policy_delay: 2
+  target_noise_clip: 0.5
+  target_policy_noise: 0.2
+  action_noise_std: 0.1
+  total_timesteps: 1000000
+  net_arch:
+    pi: [400, 300]
+    qf: [400, 300]
+
+# ──────────────────────────────────────────────
+# Environment
+# ──────────────────────────────────────────────
+environment:
+  window_size: 50             # observation lookback window
+  reward_scaling: 1.0
+  max_position: 1.0           # max fraction of balance per asset
+
+# ──────────────────────────────────────────────
+# Backtesting
+# ──────────────────────────────────────────────
+backtesting:
+  test_ratio: 0.2
+  benchmark: "BTC/USDT"       # buy-and-hold benchmark
+
+# ──────────────────────────────────────────────
+# Deployment
+# ──────────────────────────────────────────────
+deployment:
+  poll_interval_seconds: 60
+  model_path: "models/td3_best.zip"
