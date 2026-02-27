@@ -71,6 +71,46 @@ class SplitConfig:
 
 
 @dataclass(frozen=True)
+class NetArchConfig:
+    pi: list[int]
+    qf: list[int]
+
+
+@dataclass(frozen=True)
+class TD3Config:
+    learning_rate: float
+    gamma: float
+    tau: float
+    batch_size: int
+    buffer_size: int
+    learning_starts: int
+    train_freq: int
+    policy_delay: int
+    target_noise_clip: float
+    target_policy_noise: float
+    action_noise_std: float
+    total_timesteps: int
+    net_arch: NetArchConfig
+
+
+@dataclass(frozen=True)
+class EnvironmentConfig:
+    window_size: int
+    reward_scaling: float
+    max_position: float
+
+
+@dataclass(frozen=True)
+class TrainingConfig:
+    seeds: list[int]
+    cv_train_months: int
+    cv_validation_months: int
+    model_dir: str
+    mlflow_experiment_name: str
+    mlflow_tracking_uri: str
+
+
+@dataclass(frozen=True)
 class AppConfig:
     symbols: list[str]
     timeframe: str
@@ -81,6 +121,9 @@ class AppConfig:
     indicators: IndicatorsConfig
     normalization: NormalizationConfig
     split: SplitConfig
+    td3: TD3Config
+    environment: EnvironmentConfig
+    training: TrainingConfig
 
 
 def load_yaml(path: Path | str) -> dict:
@@ -142,6 +185,37 @@ def parse_config(raw: dict) -> AppConfig:
         split=SplitConfig(
             test_ratio=raw["split"]["test_ratio"],
             n_cv_folds=raw["split"]["n_cv_folds"],
+        ),
+        td3=TD3Config(
+            learning_rate=raw["td3"]["learning_rate"],
+            gamma=raw["td3"]["gamma"],
+            tau=raw["td3"]["tau"],
+            batch_size=raw["td3"]["batch_size"],
+            buffer_size=raw["td3"]["buffer_size"],
+            learning_starts=raw["td3"]["learning_starts"],
+            train_freq=raw["td3"]["train_freq"],
+            policy_delay=raw["td3"]["policy_delay"],
+            target_noise_clip=raw["td3"]["target_noise_clip"],
+            target_policy_noise=raw["td3"]["target_policy_noise"],
+            action_noise_std=raw["td3"]["action_noise_std"],
+            total_timesteps=raw["td3"]["total_timesteps"],
+            net_arch=NetArchConfig(
+                pi=raw["td3"]["net_arch"]["pi"],
+                qf=raw["td3"]["net_arch"]["qf"],
+            ),
+        ),
+        environment=EnvironmentConfig(
+            window_size=raw["environment"]["window_size"],
+            reward_scaling=raw["environment"]["reward_scaling"],
+            max_position=raw["environment"]["max_position"],
+        ),
+        training=TrainingConfig(
+            seeds=raw["training"]["seeds"],
+            cv_train_months=raw["training"]["cv_train_months"],
+            cv_validation_months=raw["training"]["cv_validation_months"],
+            model_dir=raw["training"]["model_dir"],
+            mlflow_experiment_name=raw["training"]["mlflow_experiment_name"],
+            mlflow_tracking_uri=raw["training"]["mlflow_tracking_uri"],
         ),
     )
 

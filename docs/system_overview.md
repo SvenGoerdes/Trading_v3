@@ -30,8 +30,8 @@ conf/parameters.yml          <-- All configuration lives here
          │
          v
 ┌─────────────────────┐
-│  Training            │  TD3 agent trained in Gymnasium env
-│  (Pipeline 3)        │  (not yet implemented)
+│  Training            │  TD3 agent trained in Gymnasium env,
+│  (Pipeline 3)        │  5-seed runs, rolling CV, MLflow logging
 └────────┬────────────┘
          │
          v

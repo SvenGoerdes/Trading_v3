@@ -70,6 +70,9 @@ def _make_config(tmp_path, ffill_limit=3, stale_flag_limit=20, segment_split_bey
         indicators=None,  # type: ignore[arg-type]
         normalization=None,  # type: ignore[arg-type]
         split=None,  # type: ignore[arg-type]
+        td3=None,  # type: ignore[arg-type]
+        environment=None,  # type: ignore[arg-type]
+        training=None,  # type: ignore[arg-type]
     )
 
 

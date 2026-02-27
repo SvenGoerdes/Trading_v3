@@ -9,10 +9,14 @@ import yaml
 from src.utils.config import (
     AppConfig,
     DataConfig,
+    EnvironmentConfig,
     IndicatorsConfig,
     MissingCandlePolicy,
+    NetArchConfig,
     NormalizationConfig,
     SplitConfig,
+    TD3Config,
+    TrainingConfig,
     get_config,
     load_yaml,
     parse_config,
@@ -57,6 +61,34 @@ def valid_yaml(tmp_path: Path) -> Path:
         },
         "normalization": {"method": "rolling_zscore", "window": 500},
         "split": {"test_ratio": 0.2, "n_cv_folds": 5},
+        "td3": {
+            "learning_rate": 0.0001,
+            "gamma": 0.99,
+            "tau": 0.005,
+            "batch_size": 256,
+            "buffer_size": 100000,
+            "learning_starts": 10000,
+            "train_freq": 1,
+            "policy_delay": 2,
+            "target_noise_clip": 0.5,
+            "target_policy_noise": 0.2,
+            "action_noise_std": 0.1,
+            "total_timesteps": 1000000,
+            "net_arch": {"pi": [400, 300], "qf": [400, 300]},
+        },
+        "environment": {
+            "window_size": 50,
+            "reward_scaling": 1.0,
+            "max_position": 1.0,
+        },
+        "training": {
+            "seeds": [42, 123],
+            "cv_train_months": 3,
+            "cv_validation_months": 1,
+            "model_dir": "models",
+            "mlflow_experiment_name": "test_experiment",
+            "mlflow_tracking_uri": "mlruns",
+        },
     }
     path = tmp_path / "parameters.yml"
     path.write_text(yaml.dump(data))
@@ -95,8 +127,16 @@ class TestParseConfig:
         assert isinstance(config.indicators, IndicatorsConfig)
         assert isinstance(config.normalization, NormalizationConfig)
         assert isinstance(config.split, SplitConfig)
+        assert isinstance(config.td3, TD3Config)
+        assert isinstance(config.td3.net_arch, NetArchConfig)
+        assert isinstance(config.environment, EnvironmentConfig)
+        assert isinstance(config.training, TrainingConfig)
         assert config.data.missing_candle_policy.ffill_limit == 3
         assert config.indicators.macd.fast == 12
+        assert config.td3.learning_rate == 0.0001
+        assert config.td3.net_arch.pi == [400, 300]
+        assert config.environment.window_size == 50
+        assert config.training.seeds == [42, 123]
 
     def test_missing_key_raises(self, valid_yaml: Path) -> None:
         raw = load_yaml(valid_yaml)

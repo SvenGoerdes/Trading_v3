@@ -74,12 +74,11 @@ split:
 # TD3 Hyperparameters
 # ──────────────────────────────────────────────
 td3:
-  learning_rate_actor: 0.0001
-  learning_rate_critic: 0.001
+  learning_rate: 0.0001
   gamma: 0.99
   tau: 0.005
   batch_size: 256
-  buffer_size: 1000000
+  buffer_size: 100000
   learning_starts: 10000
   train_freq: 1
   policy_delay: 2
@@ -98,6 +97,17 @@ environment:
   window_size: 50
   reward_scaling: 1.0
   max_position: 1.0
+
+# ──────────────────────────────────────────────
+# Training
+# ──────────────────────────────────────────────
+training:
+  seeds: [42, 123, 456, 789, 1024]
+  cv_train_months: 3
+  cv_validation_months: 1
+  model_dir: "models"
+  mlflow_experiment_name: "td3_crypto_trading"
+  mlflow_tracking_uri: "mlruns"
 
 # ──────────────────────────────────────────────
 # Backtesting
