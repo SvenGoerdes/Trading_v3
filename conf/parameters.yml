@@ -4,16 +4,16 @@
 symbols:
   - BTC/USDT
   - ETH/USDT
-  - BNB/USDT
   - SOL/USDT
-  - XRP/USDT
-  - ADA/USDT
-  - DOGE/USDT
   - AVAX/USDT
-  - DOT/USDT
   - LINK/USDT
+  - MATIC/USDT
+  - UNI/USDT
+  - AAVE/USDT
+  - LTC/USDT
+  - NEAR/USDT
 
-timeframe: "1h"
+timeframe: "5m"
 
 # ──────────────────────────────────────────────
 # Portfolio
@@ -26,27 +26,49 @@ slippage_pct: 0.0005         # 0.05% slippage estimate
 # Data Engineering
 # ──────────────────────────────────────────────
 data:
-  lookback_days: 730          # 2 years of history
-  missing_candle_policy: "ffill"  # forward-fill missing candles
-  max_missing_gap: 5          # max consecutive missing candles before raising error
+  lookback_days: 120
+  missing_candle_policy:
+    ffill_limit: 3
+    stale_flag_limit: 20
+    segment_split_beyond: 20
+  paths:
+    raw: "data/01_raw"
+    intermediate: "data/02_intermediate"
+    features: "data/03_features"
+    normalized: "data/04_normalized"
+    splits: "data/05_splits"
 
 # ──────────────────────────────────────────────
 # Technical Indicators
 # ──────────────────────────────────────────────
 indicators:
-  sma_windows: [7, 25, 99]
-  ema_windows: [7, 25, 99]
   rsi_window: 14
+  sma_window: 20
+  ema_window: 20
+  stochastic_window: 14
   macd:
     fast: 12
     slow: 26
     signal: 9
-  bollinger:
-    window: 20
-    std_dev: 2
-  atr_window: 14
+  roc_window: 10
+  williams_r_window: 14
+  disparity_sma_window: 20
+  ad: true
   obv: true
-  vwap: true
+
+# ──────────────────────────────────────────────
+# Normalization
+# ──────────────────────────────────────────────
+normalization:
+  method: "rolling_zscore"
+  window: 500
+
+# ──────────────────────────────────────────────
+# Train / Test Split
+# ──────────────────────────────────────────────
+split:
+  test_ratio: 0.2
+  n_cv_folds: 5
 
 # ──────────────────────────────────────────────
 # TD3 Hyperparameters
@@ -73,20 +95,19 @@ td3:
 # Environment
 # ──────────────────────────────────────────────
 environment:
-  window_size: 50             # observation lookback window
+  window_size: 50
   reward_scaling: 1.0
-  max_position: 1.0           # max fraction of balance per asset
+  max_position: 1.0
 
 # ──────────────────────────────────────────────
 # Backtesting
 # ──────────────────────────────────────────────
 backtesting:
-  test_ratio: 0.2
-  benchmark: "BTC/USDT"       # buy-and-hold benchmark
+  benchmark: "BTC/USDT"
 
 # ──────────────────────────────────────────────
 # Deployment
 # ──────────────────────────────────────────────
 deployment:
-  poll_interval_seconds: 60
+  poll_interval_seconds: 300   # 5m candle
   model_path: "models/td3_best.zip"
