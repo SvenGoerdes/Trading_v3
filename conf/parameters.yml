@@ -108,6 +108,7 @@ training:
   model_dir: "models"
   mlflow_experiment_name: "td3_crypto_trading"
   mlflow_tracking_uri: "mlruns"
+  progress_log_every_steps: 10000
 
 # ──────────────────────────────────────────────
 # Backtesting

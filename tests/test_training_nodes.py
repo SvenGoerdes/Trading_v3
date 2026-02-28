@@ -10,9 +10,11 @@ import pytest
 import torch
 
 from src.pipelines.training.nodes import (
+    TrainingProgressCallback,
     aggregate_fold_metrics,
     aggregate_seed_results,
     create_td3_agent,
+    create_training_callback,
     generate_rolling_cv_folds,
     log_experiment_to_mlflow,
     pin_random_seeds,
@@ -173,6 +175,60 @@ class TestAggregateFoldMetrics:
         assert agg["mean_sharpe_ratio"] == pytest.approx(1.5)
         assert agg["mean_cpr"] == pytest.approx(1.15)
         assert agg["mean_max_drawdown"] == pytest.approx(0.15)
+
+
+class TestTrainingProgressCallback:
+    def test_on_training_start_records_time(self) -> None:
+        cb = TrainingProgressCallback(
+            total_timesteps=100_000,
+            seed=42,
+            fold_index=0,
+            log_every_steps=10_000,
+        )
+        cb._on_training_start()
+        assert cb._start_time > 0
+
+    def test_on_step_logs_at_correct_interval(self) -> None:
+        """Callback should only log at multiples of log_every_steps."""
+        cb = TrainingProgressCallback(
+            total_timesteps=100_000,
+            seed=42,
+            fold_index=0,
+            log_every_steps=500,
+        )
+        cb._on_training_start()
+
+        # Simulate being at step 499 — should NOT trigger log
+        cb.num_timesteps = 499
+        cb.locals = {"rewards": np.array([0.01])}
+        with patch("src.pipelines.training.nodes.logger") as mock_logger:
+            result = cb._on_step()
+            assert result is True
+            mock_logger.info.assert_not_called()
+
+        # Simulate being at step 500 — should trigger log
+        cb.num_timesteps = 500
+        cb.locals = {"rewards": np.array([0.02])}
+        with patch("src.pipelines.training.nodes.logger") as mock_logger:
+            result = cb._on_step()
+            assert result is True
+            mock_logger.info.assert_called_once()
+            log_msg = mock_logger.info.call_args[0][0]
+            assert "Step" in log_msg
+            assert "steps/sec" in log_msg
+
+    def test_create_training_callback_returns_correct_type(self) -> None:
+        cb = create_training_callback(
+            total_timesteps=50_000,
+            seed=123,
+            fold_index=2,
+            log_every_steps=5_000,
+        )
+        assert isinstance(cb, TrainingProgressCallback)
+        assert cb.total_timesteps == 50_000
+        assert cb.seed == 123
+        assert cb.fold_index == 2
+        assert cb.log_every_steps == 5_000
 
 
 class TestLogExperimentToMlflow:

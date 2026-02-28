@@ -6,6 +6,9 @@ Gymnasium trading environment. Logs metrics to MLflow.
 
 from __future__ import annotations
 
+import json
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import mlflow
@@ -18,14 +21,33 @@ from .nodes import (
     aggregate_seed_results,
     create_td3_agent,
     create_trading_env,
+    create_training_callback,
     evaluate_agent,
     generate_rolling_cv_folds,
+    get_torch_device,
     log_experiment_to_mlflow,
     pin_random_seeds,
     slice_data_by_dates,
 )
 
 logger = get_logger(__name__)
+
+TIMING_LOG_PATH = Path("logs/training_timing.jsonl")
+
+
+def _format_elapsed(seconds: float) -> str:
+    """Format seconds as Xh YYm ZZs."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    return f"{hours}h{minutes:02d}m{secs:02d}s"
+
+
+def _append_timing_record(record: dict) -> None:
+    """Append a JSON record to the timing log file."""
+    TIMING_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(TIMING_LOG_PATH, "a") as f:
+        f.write(json.dumps(record) + "\n")
 
 
 def _load_train_data(splits_dir: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
@@ -103,9 +125,13 @@ def run() -> None:
 
     config_params = _flatten_config_params(config)
     all_seed_results = []
+    device = get_torch_device()
+    total_folds_all_seeds = len(training_config.seeds) * len(folds)
+    completed_folds = 0
+    cumulative_fold_time = 0.0
 
     # 5. Train across seeds
-    for seed in training_config.seeds:
+    for seed_idx, seed in enumerate(training_config.seeds):
         logger.info("=== Training with seed=%d ===", seed)
         pin_random_seeds(seed)
 
@@ -123,6 +149,8 @@ def run() -> None:
                 fold["val_start"],
                 fold["val_end"],
             )
+
+            fold_start_time = time.monotonic()
 
             # Slice data for this fold
             train_data = slice_data_by_dates(
@@ -150,14 +178,68 @@ def run() -> None:
                 config.environment,
             )
 
-            # Create and train agent
+            # Create agent and progress callback
             agent = create_td3_agent(train_env, config.td3, seed)
-            agent.learn(total_timesteps=config.td3.total_timesteps)
+            callback = create_training_callback(
+                total_timesteps=config.td3.total_timesteps,
+                seed=seed,
+                fold_index=fold_idx,
+                log_every_steps=training_config.progress_log_every_steps,
+            )
+            agent.learn(
+                total_timesteps=config.td3.total_timesteps,
+                callback=callback,
+            )
 
             # Evaluate on validation set
             metrics = evaluate_agent(agent, val_env)
             fold_metrics.append(metrics)
             logger.info("Fold %d metrics: %s", fold_idx, metrics)
+
+            # Fold timing
+            fold_elapsed = time.monotonic() - fold_start_time
+            completed_folds += 1
+            cumulative_fold_time += fold_elapsed
+
+            avg_fold_time = cumulative_fold_time / completed_folds
+            remaining_folds = total_folds_all_seeds - completed_folds
+            total_eta = avg_fold_time * remaining_folds
+
+            logger.info(
+                "Seed %d/%d | Fold %d/%d | Elapsed: %s | Fold ETA: %s | Total ETA: %s",
+                seed_idx + 1,
+                len(training_config.seeds),
+                fold_idx + 1,
+                len(folds),
+                _format_elapsed(fold_elapsed),
+                _format_elapsed(avg_fold_time * (len(folds) - fold_idx - 1)),
+                _format_elapsed(total_eta),
+            )
+
+            # Append timing record to JSONL
+            steps_per_second = (
+                config.td3.total_timesteps / fold_elapsed
+                if fold_elapsed > 0
+                else 0.0
+            )
+            _append_timing_record({
+                "timestamp": datetime.now(timezone.utc).isoformat(
+                    timespec="seconds"
+                ),
+                "seed": seed,
+                "fold_index": fold_idx,
+                "device": device,
+                "total_timesteps": config.td3.total_timesteps,
+                "train_freq": config.td3.train_freq,
+                "elapsed_seconds": round(fold_elapsed, 1),
+                "steps_per_second": round(steps_per_second, 1),
+                "train_range": (
+                    f"{fold['train_start'].date()}/{fold['train_end'].date()}"
+                ),
+                "val_range": (
+                    f"{fold['val_start'].date()}/{fold['val_end'].date()}"
+                ),
+            })
 
             # Track best model by Sharpe ratio
             if metrics["sharpe_ratio"] > best_sharpe:
@@ -187,3 +269,8 @@ def run() -> None:
         logger.info("=== Cross-seed summary ===")
         for key, value in final_summary.items():
             logger.info("  %s: %.6f", key, value)
+
+    logger.info(
+        "Training complete. Total wall time: %s",
+        _format_elapsed(cumulative_fold_time),
+    )

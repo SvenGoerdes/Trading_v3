@@ -7,6 +7,7 @@ Never call get_config() — the pipeline (caller) handles all I/O.
 from __future__ import annotations
 
 import random
+import time
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ import numpy as np
 import torch
 from pandas import DataFrame, Timestamp
 from stable_baselines3 import TD3
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.noise import NormalActionNoise
 
 from src.environments.trading_env import TradingEnv
@@ -57,6 +59,125 @@ def pin_random_seeds(seed: int) -> None:
         torch.mps.manual_seed(seed)
     torch.use_deterministic_algorithms(True, warn_only=True)
     logger.info("Pinned random seeds to %d", seed)
+
+
+class TrainingProgressCallback(BaseCallback):
+    """SB3 callback that logs training progress at fixed step intervals.
+
+    Logs steps/sec, ETA, and mean reward every ``log_every_steps`` steps.
+
+    Args:
+        total_timesteps: Total training steps for this run.
+        seed: Random seed being used.
+        fold_index: CV fold index.
+        log_every_steps: Interval between progress log lines.
+    """
+
+    def __init__(
+        self,
+        total_timesteps: int,
+        seed: int,
+        fold_index: int,
+        log_every_steps: int,
+    ) -> None:
+        super().__init__(verbose=0)
+        self.total_timesteps = total_timesteps
+        self.seed = seed
+        self.fold_index = fold_index
+        self.log_every_steps = log_every_steps
+        self._start_time: float = 0.0
+        self._reward_sum: float = 0.0
+        self._reward_count: int = 0
+
+    def _on_training_start(self) -> None:
+        self._start_time = time.monotonic()
+        logger.info(
+            "Training started: seed=%d, fold=%d, total=%s steps",
+            self.seed,
+            self.fold_index,
+            f"{self.total_timesteps:,}",
+        )
+
+    def _on_step(self) -> bool:
+        # Accumulate rewards from the info buffer
+        reward = self.locals.get("rewards")
+        if reward is not None:
+            self._reward_sum += float(np.sum(reward))
+            self._reward_count += int(np.size(reward))
+
+        current_step = self.num_timesteps
+        if current_step % self.log_every_steps != 0:
+            return True
+
+        elapsed = time.monotonic() - self._start_time
+        steps_per_sec = current_step / elapsed if elapsed > 0 else 0.0
+        remaining_steps = self.total_timesteps - current_step
+        eta_seconds = remaining_steps / steps_per_sec if steps_per_sec > 0 else 0.0
+        pct = 100.0 * current_step / self.total_timesteps
+
+        eta_h = int(eta_seconds // 3600)
+        eta_m = int((eta_seconds % 3600) // 60)
+
+        mean_reward = (
+            self._reward_sum / self._reward_count
+            if self._reward_count > 0
+            else 0.0
+        )
+
+        logger.info(
+            "Step %s/%s (%.1f%%) | %.0f steps/sec | ETA: %dh%02dm | reward: %.4f",
+            f"{current_step:,}",
+            f"{self.total_timesteps:,}",
+            pct,
+            steps_per_sec,
+            eta_h,
+            eta_m,
+            mean_reward,
+        )
+
+        # Reset running reward for next interval
+        self._reward_sum = 0.0
+        self._reward_count = 0
+        return True
+
+    def _on_training_end(self) -> None:
+        elapsed = time.monotonic() - self._start_time
+        hours = int(elapsed // 3600)
+        minutes = int((elapsed % 3600) // 60)
+        seconds = int(elapsed % 60)
+        logger.info(
+            "Training ended: seed=%d, fold=%d, elapsed=%dh%02dm%02ds",
+            self.seed,
+            self.fold_index,
+            hours,
+            minutes,
+            seconds,
+        )
+
+
+def create_training_callback(
+    total_timesteps: int,
+    seed: int,
+    fold_index: int,
+    log_every_steps: int,
+) -> TrainingProgressCallback:
+    """Create a training progress callback.
+
+    Args:
+        total_timesteps: Total training steps.
+        seed: Random seed.
+        fold_index: CV fold index.
+        log_every_steps: Steps between progress logs.
+
+    Returns:
+        Configured TrainingProgressCallback.
+    """
+    return TrainingProgressCallback(
+        total_timesteps=total_timesteps,
+        seed=seed,
+        fold_index=fold_index,
+        log_every_steps=log_every_steps,
+    )
 
 
 def generate_rolling_cv_folds(

@@ -88,6 +88,7 @@ def valid_yaml(tmp_path: Path) -> Path:
             "model_dir": "models",
             "mlflow_experiment_name": "test_experiment",
             "mlflow_tracking_uri": "mlruns",
+            "progress_log_every_steps": 10000,
         },
     }
     path = tmp_path / "parameters.yml"

@@ -108,6 +108,7 @@ class TrainingConfig:
     model_dir: str
     mlflow_experiment_name: str
     mlflow_tracking_uri: str
+    progress_log_every_steps: int
 
 
 @dataclass(frozen=True)
@@ -216,6 +217,7 @@ def parse_config(raw: dict) -> AppConfig:
             model_dir=raw["training"]["model_dir"],
             mlflow_experiment_name=raw["training"]["mlflow_experiment_name"],
             mlflow_tracking_uri=raw["training"]["mlflow_tracking_uri"],
+            progress_log_every_steps=raw["training"]["progress_log_every_steps"],
         ),
     )
 
