@@ -7,7 +7,7 @@ symbols:
   - SOL/USDT
   - AVAX/USDT
   - LINK/USDT
-  - MATIC/USDT
+  - POL/USDT
   - UNI/USDT
   - AAVE/USDT
   - LTC/USDT
@@ -103,7 +103,7 @@ environment:
 # ──────────────────────────────────────────────
 training:
   seeds: [42, 123, 456, 789, 1024]
-  cv_train_months: 3
+  cv_train_months: 2
   cv_validation_months: 1
   model_dir: "models"
   mlflow_experiment_name: "td3_crypto_trading"

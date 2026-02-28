@@ -29,6 +29,19 @@ from src.utils.metrics import (
 logger = get_logger(__name__)
 
 
+def get_torch_device() -> str:
+    """Detect the best available torch device.
+
+    Returns:
+        Device string: "mps" on Apple Silicon, "cuda" if NVIDIA GPU, else "cpu".
+    """
+    if torch.backends.mps.is_available():
+        return "mps"
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+
 def pin_random_seeds(seed: int) -> None:
     """Pin all random seeds for reproducibility.
 
@@ -40,6 +53,8 @@ def pin_random_seeds(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    if torch.backends.mps.is_available():
+        torch.mps.manual_seed(seed)
     torch.use_deterministic_algorithms(True, warn_only=True)
     logger.info("Pinned random seeds to %d", seed)
 
@@ -171,6 +186,9 @@ def create_td3_agent(
     Returns:
         Configured TD3 agent.
     """
+    device = get_torch_device()
+    logger.info("Creating TD3 agent on device=%s", device)
+
     n_actions = env.action_space.shape[0]
     action_noise = NormalActionNoise(
         mean=np.zeros(n_actions),
@@ -197,6 +215,7 @@ def create_td3_agent(
                 "qf": td3_config.net_arch.qf,
             }
         },
+        device=device,
         seed=seed,
         verbose=0,
     )
