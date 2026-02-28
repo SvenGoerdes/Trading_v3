@@ -77,8 +77,15 @@ class NetArchConfig:
 
 
 @dataclass(frozen=True)
+class LearningRateConfig:
+    actor: float
+    critic: float
+
+
+@dataclass(frozen=True)
 class TD3Config:
-    learning_rate: float
+    learning_rate: LearningRateConfig
+    lr_schedule: str
     gamma: float
     tau: float
     batch_size: int
@@ -188,7 +195,11 @@ def parse_config(raw: dict) -> AppConfig:
             n_cv_folds=raw["split"]["n_cv_folds"],
         ),
         td3=TD3Config(
-            learning_rate=raw["td3"]["learning_rate"],
+            learning_rate=LearningRateConfig(
+                actor=raw["td3"]["learning_rate"]["actor"],
+                critic=raw["td3"]["learning_rate"]["critic"],
+            ),
+            lr_schedule=raw["td3"]["lr_schedule"],
             gamma=raw["td3"]["gamma"],
             tau=raw["td3"]["tau"],
             batch_size=raw["td3"]["batch_size"],

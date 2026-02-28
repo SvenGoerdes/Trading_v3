@@ -1,0 +1,1 @@
+{"timestamp": "2026-02-28T13:13:42+00:00", "seed": 42, "fold_index": 0, "device": "mps", "total_timesteps": 1000000, "train_freq": 4, "elapsed_seconds": 7415.1, "steps_per_second": 134.9, "train_range": "2025-10-31/2025-12-31", "val_range": "2025-12-31/2026-01-31"}

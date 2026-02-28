@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import random
 import time
+import math
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from pandas import DataFrame, Timestamp
 from stable_baselines3 import TD3
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.noise import NormalActionNoise
+from stable_baselines3.common.utils import update_learning_rate
 
 from src.environments.trading_env import TradingEnv
 from src.utils.config import EnvironmentConfig, TD3Config
@@ -316,10 +318,57 @@ def create_td3_agent(
         sigma=np.full(n_actions, td3_config.action_noise_std),
     )
 
-    return TD3(
+    class CustomTD3(TD3):
+        def __init__(
+            self,
+            *args,
+            custom_lr_actor: float,
+            custom_lr_critic: float,
+            lr_schedule_type: str,
+            **kwargs,
+        ):
+            # Pass a dummy learning rate to the parent class
+            super().__init__(*args, learning_rate=1e-3, **kwargs)
+            self.custom_lr_actor = custom_lr_actor
+            self.custom_lr_critic = custom_lr_critic
+            self.lr_schedule_type = lr_schedule_type
+
+            # _setup_model() initializes the optimizers.
+            # We must immediately apply the correct learning rate.
+            if self.actor is not None and self.critic is not None:
+                self._update_learning_rate([self.actor.optimizer, self.critic.optimizer])
+
+        def _get_lr_multiplier(self) -> float:
+            progress = self._current_progress_remaining  # From 1.0 (start) to 0.0 (end)
+            if self.lr_schedule_type == "linear":
+                return progress
+            elif self.lr_schedule_type == "cosine":
+                return 0.5 * (1.0 + math.cos(math.pi * (1.0 - progress)))
+            else:
+                return 1.0  # constant
+
+        def _update_learning_rate(self, optimizers) -> None:
+            multiplier = self._get_lr_multiplier()
+            actor_lr = self.custom_lr_actor * multiplier
+            critic_lr = self.custom_lr_critic * multiplier
+
+            # Log custom learning rates to tensorboard / logger
+            try:
+                if getattr(self, "logger", None) is not None:
+                    self.logger.record("train/learning_rate_actor", actor_lr)
+                    self.logger.record("train/learning_rate_critic", critic_lr)
+            except AttributeError:
+                pass
+
+            update_learning_rate(self.actor.optimizer, actor_lr)
+            update_learning_rate(self.critic.optimizer, critic_lr)
+
+    return CustomTD3(
         policy="MlpPolicy",
         env=env,
-        learning_rate=td3_config.learning_rate,
+        custom_lr_actor=td3_config.learning_rate.actor,
+        custom_lr_critic=td3_config.learning_rate.critic,
+        lr_schedule_type=td3_config.lr_schedule,
         gamma=td3_config.gamma,
         tau=td3_config.tau,
         batch_size=td3_config.batch_size,

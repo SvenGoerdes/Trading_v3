@@ -74,10 +74,17 @@ split:
 # TD3 Hyperparameters
 # ──────────────────────────────────────────────
 td3:
-  learning_rate: 0.0001
+  # Decoupled learning rates
+  learning_rate:
+    actor: 0.0001
+    critic: 0.0003
+  
+  # Crucial for stable convergence in crypto
+  lr_schedule: "linear" # or "cosine"
+  
   gamma: 0.99
   tau: 0.005
-  batch_size: 256
+  batch_size: 512
   buffer_size: 100000
   learning_starts: 10000
   train_freq: 4
@@ -87,8 +94,8 @@ td3:
   action_noise_std: 0.1
   total_timesteps: 1000000
   net_arch:
-    pi: [400, 300]
-    qf: [400, 300]
+    pi: [256, 128]
+    qf: [256, 128]
 
 # ──────────────────────────────────────────────
 # Environment
