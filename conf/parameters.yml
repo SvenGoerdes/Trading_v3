@@ -80,7 +80,7 @@ td3:
   batch_size: 256
   buffer_size: 100000
   learning_starts: 10000
-  train_freq: 1
+  train_freq: 4
   policy_delay: 2
   target_noise_clip: 0.5
   target_policy_noise: 0.2

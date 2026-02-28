@@ -140,7 +140,7 @@ class TradingEnv(gym.Env):
         self.current_step = 0
 
         obs = self._get_observation()
-        self._assert_state_valid()
+        self._assert_state_valid(obs)
 
         return obs, {}
 
@@ -208,7 +208,7 @@ class TradingEnv(gym.Env):
             reward = 0.0
 
         obs = self._get_observation()
-        self._assert_state_valid()
+        self._assert_state_valid(obs)
 
         info = {
             "portfolio_value": new_portfolio_value,
@@ -247,9 +247,12 @@ class TradingEnv(gym.Env):
 
         return obs
 
-    def _assert_state_valid(self) -> None:
-        """Assert environment state invariants after every transition."""
+    def _assert_state_valid(self, obs: NDArray[np.float32]) -> None:
+        """Assert environment state invariants after every transition.
+
+        Args:
+            obs: Pre-computed observation to check for finiteness.
+        """
         assert self.balance >= 0, f"Negative balance: {self.balance}"
         assert np.all(self.holdings >= 0), f"Negative holdings: {self.holdings}"
-        obs = self._get_observation()
         assert np.all(np.isfinite(obs)), f"Non-finite values in observation: {obs}"
