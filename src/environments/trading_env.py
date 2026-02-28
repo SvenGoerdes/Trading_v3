@@ -17,7 +17,7 @@ from src.utils.portfolio import (
     compute_portfolio_value,
     compute_target_holdings,
     execute_rebalance,
-) 
+)
 
 logger = get_logger(__name__)
 
@@ -214,6 +214,8 @@ class TradingEnv(gym.Env):
             "portfolio_value": new_portfolio_value,
             "balance": self.balance,
             "total_cost": total_cost,
+            "holdings": self.holdings.copy(),
+            "action": target_weights.copy(),
         }
 
         return obs, reward, terminated, truncated, info

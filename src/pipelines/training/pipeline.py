@@ -13,10 +13,14 @@ from pathlib import Path
 
 import mlflow
 import pandas as pd
+from stable_baselines3.common.callbacks import CallbackList
 
 from src.utils.config import get_config
 from src.utils.logger import get_logger
+from src.utils.mlflow_metrics import TradingMetricsLogger
 
+from .callbacks import MLflowDiagnosticsCallback
+from .evaluation import run_full_evaluation
 from .nodes import (
     aggregate_seed_results,
     create_td3_agent,
@@ -25,7 +29,6 @@ from .nodes import (
     evaluate_agent,
     generate_rolling_cv_folds,
     get_torch_device,
-    log_experiment_to_mlflow,
     pin_random_seeds,
     slice_data_by_dates,
 )
@@ -178,20 +181,30 @@ def run() -> None:
                 config.environment,
             )
 
-            # Create agent and progress callback
+            # Create agent and callbacks
             agent = create_td3_agent(train_env, config.td3, seed)
-            callback = create_training_callback(
+            progress_callback = create_training_callback(
                 total_timesteps=config.td3.total_timesteps,
                 seed=seed,
                 fold_index=fold_idx,
                 log_every_steps=training_config.progress_log_every_steps,
             )
-            agent.learn(
-                total_timesteps=config.td3.total_timesteps,
-                callback=callback,
+
+            metrics_logger = TradingMetricsLogger(
+                symbols=symbols,
+                initial_balance=config.initial_balance,
+            )
+            diagnostics_callback = MLflowDiagnosticsCallback(
+                metrics_logger=metrics_logger,
             )
 
-            # Evaluate on validation set
+            callback_list = CallbackList([progress_callback, diagnostics_callback])
+            agent.learn(
+                total_timesteps=config.td3.total_timesteps,
+                callback=callback_list,
+            )
+
+            # Evaluate on validation set (basic metrics for fold comparison)
             metrics = evaluate_agent(agent, val_env)
             fold_metrics.append(metrics)
             logger.info("Fold %d metrics: %s", fold_idx, metrics)
@@ -253,14 +266,48 @@ def run() -> None:
                     best_model_path,
                 )
 
-        # Log seed results to MLflow
-        log_experiment_to_mlflow(seed, fold_metrics, best_model_path, config_params)
+        # Log seed results to MLflow (with full evaluation on last fold's val env)
+        with mlflow.start_run(run_name=f"seed_{seed}"):
+            mlflow.log_params(config_params)
+            mlflow.log_param("seed", seed)
+            mlflow.log_param("n_folds", len(fold_metrics))
+
+            for i, fm in enumerate(fold_metrics):
+                for key, value in fm.items():
+                    mlflow.log_metric(f"fold_{i}_{key}", value)
+
+            if fold_metrics:
+                from .nodes import aggregate_fold_metrics as _agg
+
+                mean_metrics = _agg(fold_metrics)
+                for key, value in mean_metrics.items():
+                    mlflow.log_metric(key, value)
+
+            if best_model_path and Path(best_model_path).exists():
+                mlflow.log_artifact(best_model_path)
+
+            # Run full diagnostics evaluation on last fold's validation env
+            if val_env is not None:
+                eval_metrics_logger = TradingMetricsLogger(
+                    symbols=symbols,
+                    initial_balance=config.initial_balance,
+                )
+                # Build price_data dict for timing/regime analysis
+                price_data = {
+                    sym: val_env.prices[:, i]
+                    for i, sym in enumerate(val_env.symbols)
+                }
+                run_full_evaluation(
+                    agent, val_env, price_data, eval_metrics_logger
+                )
+
+        logger.info("Logged MLflow run for seed=%d", seed)
 
         # Aggregate fold metrics for this seed
         if fold_metrics:
-            from .nodes import aggregate_fold_metrics
+            from .nodes import aggregate_fold_metrics as _agg_folds
 
-            seed_summary = aggregate_fold_metrics(fold_metrics)
+            seed_summary = _agg_folds(fold_metrics)
             all_seed_results.append(seed_summary)
 
     # 6. Cross-seed summary
