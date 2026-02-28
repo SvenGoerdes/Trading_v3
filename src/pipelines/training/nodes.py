@@ -31,16 +31,37 @@ from src.utils.metrics import (
 logger = get_logger(__name__)
 
 
+import torch
+
+try:
+    import torch_xla.core.xla_model as xm
+    _HAS_XLA = True
+except ImportError:
+    _HAS_XLA = False
+
 def get_torch_device() -> str:
     """Detect the best available torch device.
 
     Returns:
-        Device string: "mps" on Apple Silicon, "cuda" if NVIDIA GPU, else "cpu".
+        Device string: "xla" for TPU, "mps" on Apple Silicon, "cuda" if NVIDIA GPU, else "cpu".
     """
-    if torch.backends.mps.is_available():
-        return "mps"
+    # 1. Check for TPU (XLA) first, as it's often the specific target in Colab/Cloud
+    if _HAS_XLA:
+        try:
+            # This check confirms a TPU is actually mapped to the runtime
+            device = xm.xla_device()
+            return "xla"
+        except Exception:
+            pass
+
+    # 2. Check for NVIDIA GPU
     if torch.cuda.is_available():
         return "cuda"
+
+    # 3. Check for Apple Silicon (relevant for your M1 Pro)
+    if torch.backends.mps.is_available():
+        return "mps"
+
     return "cpu"
 
 
