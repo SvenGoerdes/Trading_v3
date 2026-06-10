@@ -6,9 +6,9 @@ Never call get_config() — the pipeline (caller) handles all I/O.
 
 from __future__ import annotations
 
+import math
 import random
 import time
-import math
 from pathlib import Path
 from typing import Any
 

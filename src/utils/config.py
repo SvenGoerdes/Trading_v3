@@ -5,6 +5,7 @@ Reads conf/parameters.yml and provides typed access to settings.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -116,6 +117,7 @@ class TrainingConfig:
     mlflow_experiment_name: str
     mlflow_tracking_uri: str
     progress_log_every_steps: int
+    max_folds: int | None
 
 
 @dataclass(frozen=True)
@@ -229,10 +231,40 @@ def parse_config(raw: dict) -> AppConfig:
             mlflow_experiment_name=raw["training"]["mlflow_experiment_name"],
             mlflow_tracking_uri=raw["training"]["mlflow_tracking_uri"],
             progress_log_every_steps=raw["training"]["progress_log_every_steps"],
+            max_folds=raw["training"].get("max_folds"),
         ),
     )
 
 
-def get_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
-    """Load YAML and return a typed AppConfig."""
+def _load_config(path: Path | str) -> AppConfig:
+    """Load YAML from a resolved path and return a typed AppConfig.
+
+    This thin wrapper is kept separate so callers can vary the path without
+    inadvertently poisoning any future caching layer.
+
+    Args:
+        path: Resolved filesystem path to parameters YAML.
+
+    Returns:
+        Fully parsed, immutable AppConfig.
+    """
     return parse_config(load_yaml(path))
+
+
+def get_config(path: Path | str | None = None) -> AppConfig:
+    """Return a typed AppConfig, resolving the config path at call time.
+
+    Path resolution order (first match wins):
+    1. ``path`` argument if explicitly provided.
+    2. ``TRADING_CONFIG`` environment variable.
+    3. ``DEFAULT_CONFIG_PATH`` (``conf/parameters.yml`` next to project root).
+
+    Args:
+        path: Optional explicit path override.  Pass ``None`` (default) to
+            use environment-variable or default resolution.
+
+    Returns:
+        Fully parsed, immutable AppConfig.
+    """
+    resolved: Path | str = path or os.environ.get("TRADING_CONFIG") or DEFAULT_CONFIG_PATH
+    return _load_config(resolved)

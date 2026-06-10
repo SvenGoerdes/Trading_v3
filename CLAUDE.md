@@ -107,7 +107,6 @@ Save parameters.yml + git commit hash alongside every trained model.
 Use deterministic=True for all evaluation and live inference.
 
 7. CODE STYLE
-
 Python 3.11+. Google-style docstrings. Functions ≤ 40 lines.
 Full names over abbreviations: portfolio_value not pv, transaction_cost not tc.
 Constants in UPPER_SNAKE_CASE. No magic numbers in function bodies.

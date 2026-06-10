@@ -92,7 +92,7 @@ td3:
   target_noise_clip: 0.5
   target_policy_noise: 0.2
   action_noise_std: 0.1
-  total_timesteps: 1000000
+  total_timesteps: 200000
   net_arch:
     pi: [256, 128]
     qf: [256, 128]
@@ -109,14 +109,14 @@ environment:
 # Training
 # ──────────────────────────────────────────────
 training:
-  seeds: [42, 123, 456, 789, 1024]
+  seeds: [42, 123]
   cv_train_months: 2
   cv_validation_months: 1
   model_dir: "models"
   mlflow_experiment_name: "td3_crypto_trading"
   mlflow_tracking_uri: "mlruns"
   progress_log_every_steps: 10000
-  max_folds: null  # limit CV folds, null = all folds
+  max_folds: 2
 
 # ──────────────────────────────────────────────
 # Backtesting

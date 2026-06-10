@@ -125,8 +125,11 @@ class TestCreateTd3Agent:
             max_position=1.0,
         )
 
+        from src.utils.config import LearningRateConfig
+
         td3_config = TD3Config(
-            learning_rate=0.0001,
+            learning_rate=LearningRateConfig(actor=0.0001, critic=0.0003),
+            lr_schedule="linear",
             gamma=0.99,
             tau=0.005,
             batch_size=64,
