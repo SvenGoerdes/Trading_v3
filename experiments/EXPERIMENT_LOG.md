@@ -3,7 +3,44 @@
 Journal aller Experimente des autonomen Optimierungs-Loops. Regeln: siehe [PROTOCOL.md](PROTOCOL.md).
 Maschinenlesbare Version: [ledger.jsonl](ledger.jsonl). Modelle: `models/<exp_id>/` (nie überschrieben).
 
-Aktueller Champion: **EXP-003 (mean val Sharpe −3.67)** — No-Trade-Band 0.10
+Aktueller Champion: **EXP-004 (mean val Sharpe −2.11)** — Turnover-Penalty 0.002 (auf Band 0.10)
+
+---
+
+## EXP-004 — 2026-06-11 — Turnover-Penalty im Reward (turnover_penalty_coef 0.0 → 0.002)
+**Hypothese:** Das No-Trade-Band wirkt nur mechanisch; der Kosten-Term im Log-Return-Reward
+  (~−4e-5/Step) liegt ~50× unter dem Reward-Rauschen (~2e-3/Step), der Gradient „sieht" die
+  Kosten nicht. Ein expliziter Turnover-Penalty macht die Handelskosten lernbar — der Critic
+  kann Verlust dem Handeln zuordnen, der Actor lernt Halten.
+**Änderung:** environment.turnover_penalty_coef: 0.0 → 0.002   (Basis: EXP-003)
+**Basis:** Commit 553f59c, data_fingerprint `ec2e07548f555da2` (gepaart mit EXP-001/002/003)
+**Budget:** 200k Steps × 2 Seeds × 2 Folds
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **−2.11** (std 0.26) | MaxDD **0.36** | CPR 0.81
+  Pro Fold: S42 F0 −1.13 / F1 −3.61 · S123 F0 −1.34 / F1 −2.36
+  3 von 4 Läufen besser; einzige gepaarte Regression S42/F1 (−3.37 → −3.61, −0.23, Down-Markt-Fold)
+**Entscheidung:** ⭐ ADOPTIERT → neuer Champion. Delta +1.56 ≫ 0.05-Schwelle, MaxDD besser
+  (0.36 vs 0.42), kein Crash/NaN. Vorläufig bis Confirmation (1M Steps, 5 Seeds).
+**Modelle:** `models/exp_004/`
+**MLflow:** Runs `seed_42` (be3e5928), `seed_123` (1cc469ef), Experiment `td3_crypto_trading`
+**Learnings:** Der Penalty wirkt **gelernt, nicht mechanisch** (Band unverändert 0.10): Trades
+  690/714 → 413/355 (−45 %), total_cost 2170/2197 → 1275/1156 (−45 %). Kosten-Term jetzt im
+  Reward sichtbar (reward_mean −3.1e-4 → −7.4e-4 früh, ~22× Rauschen statt 50× darunter),
+  critic_loss konvergiert sauber (3–6e-6, keine Instabilität). **Keine Über-Bestrafung / kein
+  Freeze:** actions/std ~0.79, action_mean 0.32 → 0.48 (Agent **hält größere Positionen**, geht
+  nicht in Cash), Trades fallen gleichmäßig über alle 10 Assets, keines auf null. **Brutto nicht
+  robust besser** (fold_1: S42 brutto −18.7 → −24.0 schlechter, S123 −18.9 → −16.7) — Gewinn kommt
+  aus Kostensenkung + Regime-Rückenwind auf fold_0, **nicht aus Direktions-Edge** (win_rate
+  0.42–0.46, profit_factor 0.58–0.67, Timing ~48–53 % = Zufall). **Fold-Asymmetrie = Regime:**
+  fold_0 (Aug11–Sep11, mild aufwärts: SOL +23 %, ETH +2 %) → Sharpe −1.1/−1.3, weil Halten belohnt
+  wird; fold_1 (Sep11–Okt11, breiter Abwärtstrend: ETH −12 %, SOL −16 %) → bleibt schwach −3.6/−2.4,
+  weil der long-biased Agent ohne Edge in den Selloff gezogen wird und Kostensenkung das nicht
+  heilt. **Verzweigung:** Kosten-Hebel decaying aber **noch nicht erschöpft** (355–413 Trades/Fold
+  Spielraum) → EXP-005 Penalty **0.002 → 0.004** (Hebel-Verlängerung, mirror Band-0.05→0.10).
+  Danach zwingend Richtung **Signal/Observation** (Direktions-Edge), nicht weiter Kosten-Shaping.
+  Anmerkung: `info["turnover"]` wird pro Step exponiert, aber nicht als `perf/turnover` aggregiert;
+  perf/*-Metriken werden pro Run nur einmal (= fold_1) geloggt → fold_0-Kosten/Brutto nicht direkt
+  beobachtbar. Kleiner Logging-Zusatz wäre nützlich (nicht blockierend).
 
 ---
 

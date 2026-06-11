@@ -1,0 +1,48 @@
+{
+  "experiment_id": "exp_004",
+  "timestamp": "2026-06-11T15:49:06+00:00",
+  "git_commit": "553f59c",
+  "config_path": "experiments/configs/exp_004_turnover_penalty.yml",
+  "data_fingerprint": "ec2e07548f555da2",
+  "model_dir": "models/exp_004",
+  "models": {
+    "42": "models/exp_004/td3_seed42_best.zip",
+    "123": "models/exp_004/td3_seed123_best.zip"
+  },
+  "n_seeds": 2,
+  "n_folds": 2,
+  "aggregate": {
+    "mean_mean_sharpe_ratio": -2.1083554255638317,
+    "std_mean_sharpe_ratio": 0.25829796123309756,
+    "mean_mean_cpr": 0.80726667349081,
+    "std_mean_cpr": 0.018991757192851788,
+    "mean_mean_max_drawdown": 0.3607665653448313,
+    "std_mean_max_drawdown": 0.0011091687373123993
+  },
+  "per_seed": {
+    "42": [
+      {
+        "sharpe_ratio": -1.1267255014678734,
+        "cpr": 0.9444770025396132,
+        "max_drawdown": 0.18273582417616954
+      },
+      {
+        "sharpe_ratio": -3.6065812721259842,
+        "cpr": 0.6320728300563032,
+        "max_drawdown": 0.5410156439881179
+      }
+    ],
+    "123": [
+      {
+        "sharpe_ratio": -1.3354959000987565,
+        "cpr": 0.9346111266473847,
+        "max_drawdown": 0.19389366576070755
+      },
+      {
+        "sharpe_ratio": -2.364619028562711,
+        "cpr": 0.7179057347199388,
+        "max_drawdown": 0.5254211274543302
+      }
+    ]
+  }
+}

@@ -78,10 +78,10 @@ td3:
   learning_rate:
     actor: 0.0001
     critic: 0.0003
-  
+
   # Crucial for stable convergence in crypto
   lr_schedule: "linear" # or "cosine"
-  
+
   gamma: 0.99
   tau: 0.005
   batch_size: 512
@@ -92,7 +92,7 @@ td3:
   target_noise_clip: 0.5
   target_policy_noise: 0.2
   action_noise_std: 0.1
-  total_timesteps: 1000000
+  total_timesteps: 200000   # screening budget
   net_arch:
     pi: [256, 128]
     qf: [256, 128]
@@ -104,21 +104,55 @@ environment:
   window_size: 50
   reward_scaling: 1.0
   max_position: 1.0
-  rebalance_threshold: 0.10 # skip trades below this fraction of portfolio value (no-trade band)
-  turnover_penalty_coef: 0.002 # reward penalty per unit turnover (traded value / portfolio value)
+  # Carried over from champion EXP-004 (band lever, unchanged this experiment).
+  rebalance_threshold: 0.10
+
+  # EXP-005 CHANGE — push the turnover penalty further (base = champion EXP-004).
+  #
+  # Evidence from EXP-004 (coef 0.0 -> 0.002, ADOPTED, mean val Sharpe -3.67 -> -2.11):
+  #   * The penalty worked as LEARNED behaviour, not a mechanical filter: with the band
+  #     unchanged at 0.10, n_trades fell 690/714 -> 413/355 per fold (~-45%) and total_cost
+  #     2170/2197 -> 1275/1156 (~-45%). The penalty term is now visible in the reward
+  #     (buffer/reward_mean -3.1e-4 -> -7.4e-4 early, ~22x noise floor) and critic_loss still
+  #     converges cleanly (3-6e-6) -> no instability.
+  #   * No over-penalisation: the agent did NOT freeze or go to cash. action_mean rose
+  #     0.32 -> 0.48 (it learned to HOLD larger positions and rebalance less), trades fell
+  #     evenly across all 10 assets, none went to zero. Plenty of trading headroom remains
+  #     (still 355-413 trades/fold).
+  #   * Gain is regime-conditional: fold_0 (Aug-Sep, mild up-market: SOL +23%, ETH +2%)
+  #     jumped to Sharpe -1.1/-1.3 because holding was rewarded; fold_1 (Sep-Oct, broad
+  #     down-market: ETH -12%, SOL -16%) stayed weak -3.6/-2.4 because the agent is
+  #     structurally long with no directional edge and cutting trades only saves cost.
+  #
+  # Hypothesis: the cost lever is decaying but NOT yet exhausted (mirror of the band
+  # 0.05 -> 0.10 step). Doubling the coef to 0.004 should drive trades/cost down further and
+  # lift Sharpe again, IF the agent has not hit the saving/damage knee. This is the
+  # cleanest one-change extension of the lever that just won, before we branch to the
+  # harder problem (no directional edge) which needs observation/signal work, not cost shaping.
+  #
+  # WATCH (over-penalisation guard): at 0.004 a full-portfolio-turnover step costs ~0.004
+  # reward vs per-step log-return std ~2e-3 -> the penalty now exceeds the return signal on
+  # high-turnover steps. If the agent freezes (n_trades -> near zero, action_std collapses,
+  # all-cash) or gross return collapses while only cost falls, that is the knee -> REJECT and
+  # branch to signal/observation. The win condition is a further Sharpe gain WITHOUT a
+  # frozen/all-cash policy.
+  #
+  # YAML-only change: turnover_penalty_coef is already wired (config -> TradingEnv.step ->
+  # reward, info["turnover"] exposed). No code change required.
+  turnover_penalty_coef: 0.004
 
 # ──────────────────────────────────────────────
 # Training
 # ──────────────────────────────────────────────
 training:
-  seeds: [42, 123, 456, 789, 1024]
+  seeds: [42, 123]
   cv_train_months: 2
   cv_validation_months: 1
   model_dir: "models"
   mlflow_experiment_name: "td3_crypto_trading"
   mlflow_tracking_uri: "mlruns"
   progress_log_every_steps: 10000
-  max_folds: null  # limit CV folds, null = all folds
+  max_folds: 2
 
 # ──────────────────────────────────────────────
 # Backtesting
