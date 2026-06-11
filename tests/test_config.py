@@ -463,6 +463,33 @@ class TestRebalanceThresholdConfig:
             config.environment.rebalance_threshold = 0.1  # type: ignore[misc]
 
 
+class TestTurnoverPenaltyCoefConfig:
+    """Tests for the turnover_penalty_coef field in EnvironmentConfig."""
+
+    def test_default_zero_when_absent(self, valid_yaml: Path) -> None:
+        """turnover_penalty_coef defaults to 0.0 when not in YAML."""
+        raw = load_yaml(valid_yaml)
+        # The fixture does not include turnover_penalty_coef — must default to 0.0
+        assert "turnover_penalty_coef" not in raw["environment"]
+        config = parse_config(raw)
+        assert config.environment.turnover_penalty_coef == pytest.approx(0.0)
+
+    def test_parsed_when_present(self, valid_yaml: Path) -> None:
+        """turnover_penalty_coef is correctly parsed when present in YAML."""
+        raw = load_yaml(valid_yaml)
+        raw["environment"]["turnover_penalty_coef"] = 0.05
+        config = parse_config(raw)
+        assert config.environment.turnover_penalty_coef == pytest.approx(0.05)
+
+    def test_immutable(self, valid_yaml: Path) -> None:
+        """turnover_penalty_coef field must be immutable (frozen dataclass)."""
+        from dataclasses import FrozenInstanceError
+
+        config = parse_config(load_yaml(valid_yaml))
+        with pytest.raises(FrozenInstanceError):
+            config.environment.turnover_penalty_coef = 0.1  # type: ignore[misc]
+
+
 class TestComputeDataFingerprint:
     """Tests for _compute_data_fingerprint."""
 

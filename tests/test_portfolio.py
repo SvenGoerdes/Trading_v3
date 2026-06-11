@@ -105,7 +105,7 @@ class TestExecuteRebalance:
         fee = 0.001
         slip = 0.0005
 
-        new_bal, new_hold, cost = execute_rebalance(
+        new_bal, new_hold, cost, traded = execute_rebalance(
             balance, holdings, target, prices, fee, slip
         )
 
@@ -125,7 +125,7 @@ class TestExecuteRebalance:
         fee = 0.001
         slip = 0.0
 
-        new_bal, new_hold, cost = execute_rebalance(
+        new_bal, new_hold, cost, traded = execute_rebalance(
             balance, holdings, target, prices, fee, slip
         )
 
@@ -149,7 +149,7 @@ class TestExecuteRebalance:
         fee = 0.001
         slip = 0.0
 
-        new_bal, new_hold, cost = execute_rebalance(
+        new_bal, new_hold, cost, traded = execute_rebalance(
             balance, holdings, target, prices, fee, slip
         )
 
@@ -169,7 +169,7 @@ class TestExecuteRebalance:
         target = np.array([10.0])
         prices = np.array([100.0])
 
-        new_bal, new_hold, cost = execute_rebalance(
+        new_bal, new_hold, cost, traded = execute_rebalance(
             balance, holdings, target, prices, 0.001, 0.0005
         )
 
@@ -188,13 +188,13 @@ class TestExecuteRebalance:
 
         # Buy 10 shares
         target_buy = np.array([10.0])
-        bal1, hold1, cost1 = execute_rebalance(
+        bal1, hold1, cost1, traded1 = execute_rebalance(
             balance, holdings, target_buy, prices, fee, slip
         )
 
         # Sell all 10 shares back
         target_sell = np.array([0.0])
-        bal2, hold2, cost2 = execute_rebalance(
+        bal2, hold2, cost2, traded2 = execute_rebalance(
             bal1, hold1, target_sell, prices, fee, slip
         )
 
@@ -225,7 +225,7 @@ class TestRebalanceThreshold:
         fee = 0.001
         slip = 0.0005
 
-        new_bal, new_hold, cost = execute_rebalance(
+        new_bal, new_hold, cost, traded = execute_rebalance(
             balance, holdings, target, prices, fee, slip, rebalance_threshold=0.05
         )
 
@@ -253,7 +253,7 @@ class TestRebalanceThreshold:
         fee = 0.001
         slip = 0.0005
 
-        new_bal, new_hold, cost = execute_rebalance(
+        new_bal, new_hold, cost, traded = execute_rebalance(
             balance, holdings, target, prices, fee, slip, rebalance_threshold=0.05
         )
 
@@ -276,10 +276,10 @@ class TestRebalanceThreshold:
         fee = 0.001
         slip = 0.0005
 
-        new_bal_default, new_hold_default, cost_default = execute_rebalance(
+        new_bal_default, new_hold_default, cost_default, traded_default = execute_rebalance(
             balance, holdings, target, prices, fee, slip
         )
-        new_bal_zero, new_hold_zero, cost_zero = execute_rebalance(
+        new_bal_zero, new_hold_zero, cost_zero, traded_zero = execute_rebalance(
             balance, holdings, target, prices, fee, slip, rebalance_threshold=0.0
         )
 
@@ -311,7 +311,7 @@ class TestRebalanceThreshold:
         fee = 0.001
         slip = 0.0005
 
-        new_bal, new_hold, cost = execute_rebalance(
+        new_bal, new_hold, cost, traded = execute_rebalance(
             balance, holdings, target, prices, fee, slip, rebalance_threshold=0.05
         )
 
@@ -336,10 +336,98 @@ class TestRebalanceThreshold:
         fee = 0.001
         slip = 0.0005
 
-        new_bal, new_hold, cost = execute_rebalance(
+        new_bal, new_hold, cost, traded = execute_rebalance(
             balance, holdings, target, prices, fee, slip, rebalance_threshold=0.05
         )
 
         assert new_bal == pytest.approx(1000.0)
         assert new_hold[0] == pytest.approx(10.0)
         assert cost == pytest.approx(0.0)
+
+
+class TestTotalTradedValue:
+    """Tests for the total_traded_value component of execute_rebalance.
+
+    All expected values are hand-computed.
+    """
+
+    def test_buy_traded_value(self) -> None:
+        """Full buy: traded value equals shares * price.
+
+        Setup: balance=1000, holdings=[0], prices=[100], target=[5], no band.
+        Buy 5 shares at 100 => trade_value = 5 * 100 = 500.
+        total_traded_value must be exactly 500.0.
+        """
+        balance = 1000.0
+        holdings = np.array([0.0])
+        target = np.array([5.0])
+        prices = np.array([100.0])
+
+        _, _, _, traded = execute_rebalance(balance, holdings, target, prices, 0.001, 0.0005)
+
+        assert traded == pytest.approx(500.0)
+
+    def test_sell_traded_value(self) -> None:
+        """Full sell: traded value equals shares * price.
+
+        Setup: balance=0, holdings=[10], prices=[100], target=[5], no band.
+        Sell 5 shares at 100 => trade_value = 5 * 100 = 500.
+        total_traded_value must be exactly 500.0.
+        """
+        balance = 0.0
+        holdings = np.array([10.0])
+        target = np.array([5.0])
+        prices = np.array([100.0])
+
+        _, _, _, traded = execute_rebalance(balance, holdings, target, prices, 0.001, 0.0005)
+
+        assert traded == pytest.approx(500.0)
+
+    def test_band_skipped_trade_contributes_zero(self) -> None:
+        """Trade below threshold is skipped; total_traded_value must be 0.0.
+
+        Setup: balance=1000, holdings=[10], prices=[100] => pv=2000.
+        Target=[10.5]: delta=0.5, trade_value=$50 < 5% of 2000=$100 => skipped.
+        total_traded_value must be 0.0.
+        """
+        balance = 1000.0
+        holdings = np.array([10.0])
+        target = np.array([10.5])
+        prices = np.array([100.0])
+
+        _, _, _, traded = execute_rebalance(
+            balance, holdings, target, prices, 0.001, 0.0005, rebalance_threshold=0.05
+        )
+
+        assert traded == pytest.approx(0.0)
+
+    def test_partial_fill_traded_value_is_filled_amount(self) -> None:
+        """Partial fill: total_traded_value equals the executed (filled) buy value.
+
+        Setup: balance=200, holdings=[0], prices=[100], target=[10], no band.
+        full_buy_needed = 10*100 + 10*100*0.001 = 1000 + 1.0 = 1001
+        fill_ratio = 200 / 1001
+        partial_shares = 10 * (200/1001)
+        partial_value = partial_shares * 100 = 10 * 100 * (200/1001) = 1000 * (200/1001)
+
+        Hand-computed:
+          fill_ratio = 200 / 1001 ≈ 0.19980019980...
+          partial_value = 1000 * (200/1001) = 200000/1001 ≈ 199.800199800...
+
+        total_traded_value must equal partial_value (not the intended 1000).
+        """
+        balance = 200.0
+        holdings = np.array([0.0])
+        target = np.array([10.0])
+        prices = np.array([100.0])
+
+        _, _, _, traded = execute_rebalance(balance, holdings, target, prices, 0.001, 0.0)
+
+        # full_buy_needed = 1000 + 1000*0.001 = 1001
+        # fill_ratio = 200 / 1001
+        # partial_value = 10 * fill_ratio * 100
+        expected_fill_ratio = 200.0 / 1001.0
+        expected_partial_value = 10.0 * expected_fill_ratio * 100.0
+        assert traded == pytest.approx(expected_partial_value)
+        # Sanity: must be less than the intended 1000
+        assert traded < 1000.0

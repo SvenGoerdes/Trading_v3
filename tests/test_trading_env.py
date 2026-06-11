@@ -291,3 +291,111 @@ class TestRebalanceThresholdWiring:
         # With threshold=1.0, min_trade=10000 >> any actual trade value => skipped
         assert info["total_cost"] == pytest.approx(0.0)
         assert env.balance == pytest.approx(10000.0)
+
+
+class TestTurnoverPenalty:
+    """Tests for the turnover_penalty_coef reward adjustment.
+
+    All expected values are hand-computed.
+    """
+
+    def test_coef_zero_reward_identical_to_baseline(self) -> None:
+        """turnover_penalty_coef=0.0 must produce the exact same reward as no param.
+
+        Two envs with identical data and action; one has coef=0.0, the other
+        does not pass the argument at all (defaults to 0.0).  Rewards must
+        be identical float-for-float.
+        """
+        data, symbols = _make_env_data(n_steps=200, n_assets=2)
+        kwargs = dict(
+            data=data,
+            symbols=symbols,
+            initial_balance=10000.0,
+            trading_fee_pct=0.001,
+            slippage_pct=0.0005,
+            window_size=10,
+            reward_scaling=1.0,
+            max_position=1.0,
+        )
+        env_baseline = TradingEnv(**kwargs)
+        env_coef0 = TradingEnv(**kwargs, turnover_penalty_coef=0.0)
+
+        env_baseline.reset(seed=0)
+        env_coef0.reset(seed=0)
+        action = np.array([1.0, 1.0], dtype=np.float32)
+
+        _, r_baseline, _, _, _ = env_baseline.step(action)
+        _, r_coef0, _, _, _ = env_coef0.step(action)
+
+        assert r_coef0 == r_baseline  # exact bit-for-bit equality
+
+    def test_coef_nonzero_reduces_reward_by_penalty(self) -> None:
+        """With coef>0, reward = log_return*scaling - coef*turnover.
+
+        Hand-computed scenario:
+          initial_balance=10000, action=[1,1] => weights=[0.5, 0.5]
+          synthetic data seed: both envs reset(seed=0)
+          step 0: data_idx=10, current_prices from _make_env_data with seed 42
+
+        We run the *same* action on two identical envs differing only in coef.
+        The difference in rewards must equal coef * turnover, with turnover
+        read from the info dict and cross-checked against total_traded_value/old_pv.
+        """
+        coef = 0.01
+        data, symbols = _make_env_data(n_steps=200, n_assets=2)
+        common_kwargs = dict(
+            data=data,
+            symbols=symbols,
+            initial_balance=10000.0,
+            trading_fee_pct=0.001,
+            slippage_pct=0.0005,
+            window_size=10,
+            reward_scaling=1.0,
+            max_position=1.0,
+        )
+        env0 = TradingEnv(**common_kwargs, turnover_penalty_coef=0.0)
+        envX = TradingEnv(**common_kwargs, turnover_penalty_coef=coef)
+
+        env0.reset(seed=0)
+        envX.reset(seed=0)
+        action = np.array([1.0, 1.0], dtype=np.float32)
+
+        _, r0, _, _, info0 = env0.step(action)
+        _, rX, _, _, infoX = envX.step(action)
+
+        # Turnover from info dict; both envs must agree since same action/prices
+        turnover = info0["turnover"]
+        assert infoX["turnover"] == pytest.approx(turnover)
+
+        # Reward difference must equal coef * turnover exactly
+        assert r0 - rX == pytest.approx(coef * turnover)
+
+        # Cross-check: turnover = total_traded_value / initial_balance (all-cash step)
+        expected_turnover = info0["total_traded_value"] / 10000.0
+        assert turnover == pytest.approx(expected_turnover)
+
+    def test_info_contains_turnover_key(self) -> None:
+        """The info dict must always contain a 'turnover' key."""
+        env = _make_env()
+        env.reset()
+        action = np.array([0.5, 0.5], dtype=np.float32)
+        _, _, _, _, info = env.step(action)
+
+        assert "turnover" in info
+        assert np.isfinite(info["turnover"])
+
+    def test_turnover_zero_for_hold_action(self) -> None:
+        """A hold action (all -1 => weight 0.0 = no trades) must yield turnover=0.
+
+        Action all-minus-one maps to weight 0.0 for every asset.  When the
+        previous state is all-cash (fresh reset), target_shares=0 = current
+        holdings, so no trades execute and total_traded_value must be 0.0.
+        """
+        env = _make_env()
+        env.reset()
+        # Action = all -1.0 → weight = 0.0 → no buys, no sells (holdings=0)
+        action = np.full(env.n_assets, -1.0, dtype=np.float32)
+        _, _, _, _, info = env.step(action)
+
+        assert info["turnover"] == pytest.approx(0.0)
+        assert info["total_traded_value"] == pytest.approx(0.0)

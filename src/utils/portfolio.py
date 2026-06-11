@@ -87,7 +87,7 @@ def execute_rebalance(
     trading_fee_pct: float,
     slippage_pct: float,
     rebalance_threshold: float = 0.0,
-) -> tuple[float, NDArray[np.float64], float]:
+) -> tuple[float, NDArray[np.float64], float, float]:
     """Execute portfolio rebalance with sell-first priority and optional no-trade band.
 
     Sells are executed first to free up cash, then buys are executed.
@@ -113,7 +113,10 @@ def execute_rebalance(
             skipped.  Default 0.0 means no trade is ever skipped.
 
     Returns:
-        Tuple of (new_balance, new_holdings, total_cost).
+        Tuple of (new_balance, new_holdings, total_cost, total_traded_value).
+        ``total_traded_value`` is the sum of absolute executed trade values
+        (post band-filtering, including partial fills at their filled values).
+        Band-skipped trades contribute zero.
     """
     assert current_balance >= 0, f"Negative balance: {current_balance}"
     assert np.all(current_holdings >= 0), f"Negative holdings: {current_holdings}"
@@ -126,6 +129,7 @@ def execute_rebalance(
     new_holdings = current_holdings.copy()
     new_balance = current_balance
     total_cost = 0.0
+    total_traded_value = 0.0
 
     # Phase 1: Sell (deltas < 0)
     sell_indices = np.where(deltas < 0)[0]
@@ -138,6 +142,7 @@ def execute_rebalance(
         new_holdings[idx] -= sell_shares
         new_balance += trade_value - cost
         total_cost += cost
+        total_traded_value += trade_value
 
     # Phase 2: Buy (deltas > 0) — filter by band before computing totals
     buy_indices = np.where(deltas > 0)[0]
@@ -160,6 +165,7 @@ def execute_rebalance(
             new_holdings[buy_idx_arr] += buy_shares
             new_balance -= total_buy_needed
             total_cost += float(np.sum(buy_costs))
+            total_traded_value += float(np.sum(buy_values))
         elif new_balance > 0:
             # Partial fill — scale down proportionally
             fill_ratio = new_balance / total_buy_needed
@@ -171,6 +177,7 @@ def execute_rebalance(
             new_holdings[buy_idx_arr] += partial_shares
             new_balance -= float(np.sum(partial_values + partial_costs))
             total_cost += float(np.sum(partial_costs))
+            total_traded_value += float(np.sum(partial_values))
 
     # Guard against floating-point drift below zero
     new_balance = max(new_balance, 0.0)
@@ -178,4 +185,4 @@ def execute_rebalance(
     assert new_balance >= 0, f"Negative balance after rebalance: {new_balance}"
     assert np.all(new_holdings >= 0), f"Negative holdings after rebalance: {new_holdings}"
 
-    return new_balance, new_holdings, total_cost
+    return new_balance, new_holdings, total_cost, total_traded_value

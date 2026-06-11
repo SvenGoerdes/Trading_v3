@@ -107,6 +107,7 @@ class EnvironmentConfig:
     reward_scaling: float
     max_position: float
     rebalance_threshold: float
+    turnover_penalty_coef: float
 
 
 @dataclass(frozen=True)
@@ -224,6 +225,7 @@ def parse_config(raw: dict) -> AppConfig:
             reward_scaling=raw["environment"]["reward_scaling"],
             max_position=raw["environment"]["max_position"],
             rebalance_threshold=raw["environment"].get("rebalance_threshold", 0.0),
+            turnover_penalty_coef=raw["environment"].get("turnover_penalty_coef", 0.0),
         ),
         training=TrainingConfig(
             seeds=raw["training"]["seeds"],

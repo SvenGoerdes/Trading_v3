@@ -3,7 +3,34 @@
 Journal aller Experimente des autonomen Optimierungs-Loops. Regeln: siehe [PROTOCOL.md](PROTOCOL.md).
 Maschinenlesbare Version: [ledger.jsonl](ledger.jsonl). Modelle: `models/<exp_id>/` (nie überschrieben).
 
-Aktueller Champion: **EXP-002 (mean val Sharpe −5.99)** — No-Trade-Band 0.05
+Aktueller Champion: **EXP-003 (mean val Sharpe −3.67)** — No-Trade-Band 0.10
+
+---
+
+## EXP-003 — 2026-06-11 — No-Trade-Band breiter (rebalance_threshold 0.05 → 0.10)
+**Hypothese:** Kosten dominierten in EXP-002 den Restverlust (32 von 46 %pt). Ein breiteres
+  Band (10 %pt statt 5) sollte die Kosten erneut um ~ein Drittel senken und Sharpe weiter heben.
+**Änderung:** environment.rebalance_threshold: 0.05 → 0.10   (Basis: EXP-002)
+**Basis:** Commit 1b8abb7, data_fingerprint `ec2e07548f555da2` (gepaart mit EXP-001/002)
+**Budget:** 200k Steps × 2 Seeds × 2 Folds
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **−3.67** (std 0.18) | MaxDD **0.42** | CPR 0.71
+  Pro Fold: S42 F0 −3.61 / F1 −3.37 · S123 F0 −3.63 / F1 −4.08
+  3 von 4 Läufen besser; **S123/F1 regressiert −3.19 → −4.08 (erste gepaarte Regression der Band-Serie)**
+**Entscheidung:** ⭐ ADOPTIERT → neuer Champion. Delta +2.31 ≫ 0.05-Schwelle, MaxDD besser
+  (0.42 vs 0.54), kein Crash/NaN. Vorläufig bis Confirmation (1M Steps, 5 Seeds).
+**Modelle:** `models/exp_003/`
+**MLflow:** Runs `seed_42` (6491c1f7), `seed_123` (23307f41), Experiment `td3_crypto_trading`
+**Learnings:** Kosten-Hebel **am Abklingen, aber noch nicht erschöpft**. Kosten/Brutto-Zerlegung
+  (fold_1-Snapshot): total_cost **3.181 → 2.184** (−31 %), Trades **~1.8k → ~702/Fold** (Agent
+  handelt nur noch 0.8 % aller Asset-Step-Gelegenheiten). **Aber** Brutto-Rendite weiter schlechter
+  ~−14.5 % → −18.8 %. Spar-/Schaden-Verhältnis pro Band-Schritt **5.15 (0→0.05) → 2.33 (0.05→0.10)**.
+  Kosten dominieren den Rest **nicht mehr** (22 % Kapital Kosten vs 19 % Brutto-Verlust): selbst bei
+  Nullkosten verliert der Agent ~19 %, weil **kein Richtungs-Edge** (win_rate 0.47–0.49, Timing ~48/49
+  vs SMA20, Trades gleichmäßig über alle 10 Assets = reiner Churn). Regime-Sharpe Up/Down (−89/−75)
+  ist Annualisierungs-Rauschen (14/31 Steps); Headline = Sideways-Regime (8.545 Steps). **Verzweigung
+  jetzt:** Band mechanisch ausgereizt → nächstes Experiment **Turnover-Penalty im Reward** (EXP-004,
+  strukturell/Code), damit der Gradient die Handelskosten endlich „sieht" und Halten gelernt wird.
 
 ---
 

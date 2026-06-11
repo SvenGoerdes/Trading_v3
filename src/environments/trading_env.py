@@ -43,6 +43,11 @@ class TradingEnv(gym.Env):
         rebalance_threshold: Minimum trade size as a fraction of portfolio
             value.  Trades below this threshold are skipped (no-trade band).
             Default 0.0 disables the band.
+        turnover_penalty_coef: Coefficient for the turnover penalty term in the
+            reward.  Reward becomes ``log_return * reward_scaling -
+            turnover_penalty_coef * turnover``, where ``turnover =
+            total_traded_value / old_portfolio_value``.  Default 0.0
+            reproduces the original reward bit-for-bit.
     """
 
     metadata = {"render_modes": []}
@@ -58,6 +63,7 @@ class TradingEnv(gym.Env):
         reward_scaling: float,
         max_position: float,
         rebalance_threshold: float = 0.0,
+        turnover_penalty_coef: float = 0.0,
     ) -> None:
         super().__init__()
         self.symbols = symbols
@@ -69,6 +75,7 @@ class TradingEnv(gym.Env):
         self.reward_scaling = reward_scaling
         self.max_position = max_position
         self.rebalance_threshold = rebalance_threshold
+        self.turnover_penalty_coef = turnover_penalty_coef
 
         self._build_data_arrays(data)
 
@@ -174,7 +181,7 @@ class TradingEnv(gym.Env):
             target_weights, old_portfolio_value, current_prices, self.max_position
         )
 
-        self.balance, self.holdings, total_cost = execute_rebalance(
+        self.balance, self.holdings, total_cost, total_traded_value = execute_rebalance(
             self.balance,
             self.holdings,
             target_shares,
@@ -205,10 +212,17 @@ class TradingEnv(gym.Env):
         if new_portfolio_value <= 0:
             terminated = True
 
-        # Reward: log return scaled
+        # Turnover: total executed trade value / pre-trade portfolio value
+        if old_portfolio_value > 0:
+            turnover = total_traded_value / old_portfolio_value
+        else:
+            turnover = 0.0
+
+        # Reward: log return scaled, minus turnover penalty
         if old_portfolio_value > 0 and new_portfolio_value > 0:
             reward = float(
                 np.log(new_portfolio_value / old_portfolio_value) * self.reward_scaling
+                - self.turnover_penalty_coef * turnover
             )
         else:
             reward = 0.0
@@ -220,6 +234,8 @@ class TradingEnv(gym.Env):
             "portfolio_value": new_portfolio_value,
             "balance": self.balance,
             "total_cost": total_cost,
+            "total_traded_value": total_traded_value,
+            "turnover": turnover,
             "holdings": self.holdings.copy(),
             "action": target_weights.copy(),
         }

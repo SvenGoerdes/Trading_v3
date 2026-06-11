@@ -292,6 +292,7 @@ def create_trading_env(
         reward_scaling=env_config.reward_scaling,
         max_position=env_config.max_position,
         rebalance_threshold=env_config.rebalance_threshold,
+        turnover_penalty_coef=env_config.turnover_penalty_coef,
     )
 
 

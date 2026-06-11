@@ -78,10 +78,10 @@ td3:
   learning_rate:
     actor: 0.0001
     critic: 0.0003
-  
+
   # Crucial for stable convergence in crypto
   lr_schedule: "linear" # or "cosine"
-  
+
   gamma: 0.99
   tau: 0.005
   batch_size: 512
@@ -92,7 +92,7 @@ td3:
   target_noise_clip: 0.5
   target_policy_noise: 0.2
   action_noise_std: 0.1
-  total_timesteps: 1000000
+  total_timesteps: 200000   # screening budget
   net_arch:
     pi: [256, 128]
     qf: [256, 128]
@@ -104,21 +104,44 @@ environment:
   window_size: 50
   reward_scaling: 1.0
   max_position: 1.0
-  rebalance_threshold: 0.10 # skip trades below this fraction of portfolio value (no-trade band)
-  turnover_penalty_coef: 0.0  # reward penalty per unit turnover (traded value / portfolio value)
+  # Carried over from NEW champion EXP-003 (band lever, unchanged this experiment).
+  rebalance_threshold: 0.10
+
+  # EXP-004 CHANGE — add an explicit turnover penalty to the reward (base = champion EXP-003).
+  # Rationale: the band lever is decaying. From the cost/gross decomposition (fold_1 snapshot):
+  #   band 0.0->0.05: cost -19.8pt, gross -3.8pt -> saving/damage ratio 5.15
+  #   band 0.05->0.10: cost -10.0pt, gross -4.3pt -> saving/damage ratio 2.33 (falling fast)
+  # Cost no longer dominates (~22% of capital vs ~19% gross loss): even at zero cost the agent
+  # loses ~19% because it has NO directional edge (win_rate 0.47, timing ~48/49 vs SMA20,
+  # trades spread evenly across all 10 assets -> pure churn, not a learned position).
+  # The band suppresses churn MECHANICALLY but the policy never LEARNS to avoid it: the cost
+  # signal inside log-return reward is ~-4e-5/step, ~50x below reward noise (~2e-3/step), so
+  # the gradient cannot see it (confirmed since EXP-001: reward_mean << reward_std throughout).
+  # Fix: subturn the per-step traded fraction into the reward at a learnable scale, so the
+  # critic can attribute loss to trading and the actor learns to hold. This attacks the root
+  # cause (cost invisible to gradient) rather than the symptom (mechanical filter).
+  # Formula (implemented in TradingEnv.step, see code spec in EXP-004 proposal):
+  #   turnover = sum(abs(executed_trade_value)) / old_portfolio_value      # in [0, ~2]
+  #   reward   = log(new_pv / old_pv) * reward_scaling - turnover_penalty_coef * turnover
+  # 0.0 disables the penalty (bit-for-bit identical to champion). Start small: the raw
+  # transaction cost on a full-portfolio turnover is ~0.0015, and per-step log-return std is
+  # ~2e-3, so a coef of 0.002 makes a 50%-turnover step cost ~0.001 reward — same order as the
+  # return signal, visible to the gradient, without dwarfing it. Watch: turnover should fall
+  # AND gross return must not collapse (over-penalised agent freezes -> tracks worse).
+  turnover_penalty_coef: 0.002
 
 # ──────────────────────────────────────────────
 # Training
 # ──────────────────────────────────────────────
 training:
-  seeds: [42, 123, 456, 789, 1024]
+  seeds: [42, 123]
   cv_train_months: 2
   cv_validation_months: 1
   model_dir: "models"
   mlflow_experiment_name: "td3_crypto_trading"
   mlflow_tracking_uri: "mlruns"
   progress_log_every_steps: 10000
-  max_folds: null  # limit CV folds, null = all folds
+  max_folds: 2
 
 # ──────────────────────────────────────────────
 # Backtesting
