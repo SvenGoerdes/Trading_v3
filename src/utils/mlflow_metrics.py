@@ -342,6 +342,10 @@ class TradingMetricsLogger:
         if len(observations) == 0 or len(actions) == 0:
             return
 
+        assert len(observations) == len(actions), (
+            f"observation/action mismatch: {len(observations)} observations vs {len(actions)} actions"
+        )
+
         obs_array = np.array(observations, dtype=np.float64)
         act_array = np.array(actions, dtype=np.float64)
 

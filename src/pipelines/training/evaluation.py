@@ -132,7 +132,8 @@ def run_full_evaluation(
     rewards_list: list[float] = []
     actions_list: list[NDArray[np.float64]] = []
     holdings_list: list[NDArray[np.float64]] = [np.zeros(test_env.n_assets, dtype=np.float64)]
-    observations_list: list[NDArray[np.float32]] = [obs.copy()]
+    # One entry per executed action: the observation the agent acted on.
+    observations_list: list[NDArray[np.float32]] = []
     prices_list: list[NDArray[np.float64]] = [
         test_env.prices[test_env.window_size].copy()
     ]
@@ -142,6 +143,7 @@ def run_full_evaluation(
     truncated = False
 
     while not terminated and not truncated:
+        observations_list.append(obs.copy())
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = test_env.step(action)
 
@@ -149,7 +151,6 @@ def run_full_evaluation(
         rewards_list.append(float(reward))
         actions_list.append(info["action"].copy())
         holdings_list.append(info["holdings"].copy())
-        observations_list.append(obs.copy())
         total_costs += info["total_cost"]
 
         # Get current prices for trade derivation
