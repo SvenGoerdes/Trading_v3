@@ -27,7 +27,10 @@ NORM_COLUMN_SUFFIX = "_norm"
 class TradingEnv(gym.Env):
     """Multi-asset portfolio trading environment.
 
-    Observation: flat vector of [window_features | portfolio_weights | cash_ratio].
+    Observation: flat vector of [window_features | portfolio_weights | cash_ratio]
+    or, when cross_sectional_momentum is enabled:
+    [window_features | portfolio_weights | cash_ratio | momentum(n_assets)].
+
     Action: Box(-1, 1) mapped to allocation weights via (action + 1) / 2.
 
     Args:
@@ -48,6 +51,11 @@ class TradingEnv(gym.Env):
             turnover_penalty_coef * turnover``, where ``turnover =
             total_traded_value / old_portfolio_value``.  Default 0.0
             reproduces the original reward bit-for-bit.
+        cross_sectional_momentum: When True, append ``n_assets`` cross-sectional
+            momentum values after ``cash_ratio`` in the observation.  Default False
+            reproduces prior observation layout bit-for-bit.
+        momentum_window: Lookback bars for the momentum return window.  Must be
+            <= window_size.  Default 12.
     """
 
     metadata = {"render_modes": []}
@@ -64,6 +72,8 @@ class TradingEnv(gym.Env):
         max_position: float,
         rebalance_threshold: float = 0.0,
         turnover_penalty_coef: float = 0.0,
+        cross_sectional_momentum: bool = False,
+        momentum_window: int = 12,
     ) -> None:
         super().__init__()
         self.symbols = symbols
@@ -76,8 +86,16 @@ class TradingEnv(gym.Env):
         self.max_position = max_position
         self.rebalance_threshold = rebalance_threshold
         self.turnover_penalty_coef = turnover_penalty_coef
+        self.cross_sectional_momentum = cross_sectional_momentum
+        self.momentum_window = momentum_window
 
         self._build_data_arrays(data)
+
+        if self.cross_sectional_momentum:
+            assert self.momentum_window <= self.window_size, (
+                f"momentum_window ({self.momentum_window}) must be <= "
+                f"window_size ({self.window_size})"
+            )
 
         self.max_steps = self.n_steps - self.window_size
 
@@ -87,11 +105,14 @@ class TradingEnv(gym.Env):
         )
 
         # Observation: flattened window features + portfolio weights + cash ratio
+        # + optional n_assets cross-sectional momentum values
         obs_size = (
             self.window_size * self.n_assets * self.n_features
             + self.n_assets  # portfolio weights
             + 1  # cash ratio
         )
+        if self.cross_sectional_momentum:
+            obs_size += self.n_assets
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(obs_size,), dtype=np.float32
         )
@@ -243,7 +264,11 @@ class TradingEnv(gym.Env):
         return obs, reward, terminated, truncated, info
 
     def _get_observation(self) -> NDArray[np.float32]:
-        """Build the flat observation vector."""
+        """Build the flat observation vector.
+
+        Layout (always): [window_features | portfolio_weights | cash_ratio]
+        Layout (cross_sectional_momentum=True): [...above... | momentum(n_assets)]
+        """
         data_idx = self.window_size + self.current_step
         # Window features: (window_size, n_assets, n_features) -> flat
         window_start = data_idx - self.window_size
@@ -263,13 +288,31 @@ class TradingEnv(gym.Env):
             portfolio_weights = np.zeros(self.n_assets)
             cash_ratio = 0.0
 
-        obs = np.concatenate([
-            window_features,
-            portfolio_weights,
-            [cash_ratio],
-        ]).astype(np.float32)
+        parts: list[NDArray] = [window_features, portfolio_weights, [cash_ratio]]
+
+        if self.cross_sectional_momentum:
+            parts.append(self._compute_cross_sectional_momentum(data_idx))
+
+        obs = np.concatenate(parts).astype(np.float32)
 
         return obs
+
+    def _compute_cross_sectional_momentum(self, data_idx: int) -> NDArray[np.float64]:
+        """Compute cross-sectional momentum standardised across assets.
+
+        Uses only prices up to and including ``data_idx`` (no look-ahead).
+
+        Args:
+            data_idx: Current bar index (= window_size + current_step).
+
+        Returns:
+            Array of shape (n_assets,) with z-scored momentum values.
+        """
+        idx_now = min(data_idx, self.n_steps - 1)
+        idx_past = max(idx_now - self.momentum_window, 0)
+        raw_ret = self.prices[idx_now] / self.prices[idx_past] - 1.0
+        mom = (raw_ret - raw_ret.mean()) / (raw_ret.std() + 1e-8)
+        return mom
 
     def _assert_state_valid(self, obs: NDArray[np.float32]) -> None:
         """Assert environment state invariants after every transition.

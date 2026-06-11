@@ -108,6 +108,8 @@ class EnvironmentConfig:
     max_position: float
     rebalance_threshold: float
     turnover_penalty_coef: float
+    cross_sectional_momentum: bool
+    momentum_window: int
 
 
 @dataclass(frozen=True)
@@ -226,6 +228,8 @@ def parse_config(raw: dict) -> AppConfig:
             max_position=raw["environment"]["max_position"],
             rebalance_threshold=raw["environment"].get("rebalance_threshold", 0.0),
             turnover_penalty_coef=raw["environment"].get("turnover_penalty_coef", 0.0),
+            cross_sectional_momentum=raw["environment"].get("cross_sectional_momentum", False),
+            momentum_window=raw["environment"].get("momentum_window", 12),
         ),
         training=TrainingConfig(
             seeds=raw["training"]["seeds"],

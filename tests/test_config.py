@@ -490,6 +490,38 @@ class TestTurnoverPenaltyCoefConfig:
             config.environment.turnover_penalty_coef = 0.1  # type: ignore[misc]
 
 
+class TestCrossSectionalMomentumConfig:
+    """Tests for cross_sectional_momentum and momentum_window in EnvironmentConfig."""
+
+    def test_defaults_when_absent(self, valid_yaml: Path) -> None:
+        """cross_sectional_momentum defaults to False and momentum_window to 12 when absent."""
+        raw = load_yaml(valid_yaml)
+        assert "cross_sectional_momentum" not in raw["environment"]
+        assert "momentum_window" not in raw["environment"]
+        config = parse_config(raw)
+        assert config.environment.cross_sectional_momentum is False
+        assert config.environment.momentum_window == 12
+
+    def test_cross_sectional_momentum_parsed_when_present(self, valid_yaml: Path) -> None:
+        """cross_sectional_momentum is correctly parsed when True in YAML."""
+        raw = load_yaml(valid_yaml)
+        raw["environment"]["cross_sectional_momentum"] = True
+        raw["environment"]["momentum_window"] = 6
+        config = parse_config(raw)
+        assert config.environment.cross_sectional_momentum is True
+        assert config.environment.momentum_window == 6
+
+    def test_immutable(self, valid_yaml: Path) -> None:
+        """cross_sectional_momentum and momentum_window fields are immutable."""
+        from dataclasses import FrozenInstanceError
+
+        config = parse_config(load_yaml(valid_yaml))
+        with pytest.raises(FrozenInstanceError):
+            config.environment.cross_sectional_momentum = True  # type: ignore[misc]
+        with pytest.raises(FrozenInstanceError):
+            config.environment.momentum_window = 99  # type: ignore[misc]
+
+
 class TestComputeDataFingerprint:
     """Tests for _compute_data_fingerprint."""
 

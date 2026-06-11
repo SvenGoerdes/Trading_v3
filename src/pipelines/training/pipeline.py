@@ -256,6 +256,8 @@ def _flatten_config_params(config) -> dict[str, str]:
         "max_position": str(config.environment.max_position),
         "rebalance_threshold": str(config.environment.rebalance_threshold),
         "turnover_penalty_coef": str(config.environment.turnover_penalty_coef),
+        "cross_sectional_momentum": str(config.environment.cross_sectional_momentum),
+        "momentum_window": str(config.environment.momentum_window),
         # Portfolio
         "initial_balance": str(config.initial_balance),
         "trading_fee_pct": str(config.trading_fee_pct),

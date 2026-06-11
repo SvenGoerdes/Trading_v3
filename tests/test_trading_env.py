@@ -293,6 +293,288 @@ class TestRebalanceThresholdWiring:
         assert env.balance == pytest.approx(10000.0)
 
 
+class TestCrossSectionalMomentum:
+    """Tests for the config-gated cross-sectional momentum observation feature."""
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _make_momentum_env(
+        self,
+        n_steps: int = 200,
+        n_assets: int = 2,
+        window_size: int = 20,
+        momentum_window: int = 10,
+        cross_sectional_momentum: bool = True,
+        prices_override: np.ndarray | None = None,
+    ) -> TradingEnv:
+        """Create a TradingEnv with momentum feature optionally enabled."""
+        symbols = [f"ASSET{i}/USDT" for i in range(n_assets)]
+        dates = pd.date_range("2024-01-01", periods=n_steps, freq="5min")
+        rng = np.random.RandomState(7)
+        data = {}
+        for i, symbol in enumerate(symbols):
+            if prices_override is not None:
+                prices = prices_override[:, i]
+            else:
+                returns = rng.normal(0, 0.001, n_steps)
+                prices = 100.0 * (1 + np.cumsum(returns))
+                prices = np.maximum(prices, 1.0)
+
+            df = pd.DataFrame(
+                {
+                    "close": prices,
+                    "rsi_14_norm": rng.randn(n_steps) * 0.1,
+                },
+                index=dates,
+            )
+            data[symbol] = df
+        return TradingEnv(
+            data=data,
+            symbols=symbols,
+            initial_balance=10000.0,
+            trading_fee_pct=0.001,
+            slippage_pct=0.0005,
+            window_size=window_size,
+            reward_scaling=1.0,
+            max_position=1.0,
+            cross_sectional_momentum=cross_sectional_momentum,
+            momentum_window=momentum_window,
+        )
+
+    # ------------------------------------------------------------------
+    # (a) Disabled: obs shape unchanged AND bit-identical to old-style env
+    # ------------------------------------------------------------------
+
+    def test_disabled_obs_shape_unchanged(self) -> None:
+        """With flag off, obs size equals the pre-feature layout."""
+        data, symbols = _make_env_data(n_steps=200, n_assets=2)
+        env_old = TradingEnv(
+            data=data, symbols=symbols, initial_balance=10000.0,
+            trading_fee_pct=0.001, slippage_pct=0.0005,
+            window_size=10, reward_scaling=1.0, max_position=1.0,
+        )
+        env_new = TradingEnv(
+            data=data, symbols=symbols, initial_balance=10000.0,
+            trading_fee_pct=0.001, slippage_pct=0.0005,
+            window_size=10, reward_scaling=1.0, max_position=1.0,
+            cross_sectional_momentum=False,
+        )
+        assert env_old.observation_space.shape == env_new.observation_space.shape
+
+    def test_disabled_obs_bit_identical(self) -> None:
+        """Env built without new params produces bit-identical obs to flag=False env."""
+        data, symbols = _make_env_data(n_steps=200, n_assets=2)
+        kwargs = dict(
+            data=data, symbols=symbols, initial_balance=10000.0,
+            trading_fee_pct=0.001, slippage_pct=0.0005,
+            window_size=10, reward_scaling=1.0, max_position=1.0,
+        )
+        env_old = TradingEnv(**kwargs)
+        env_new = TradingEnv(**kwargs, cross_sectional_momentum=False, momentum_window=12)
+
+        obs_old, _ = env_old.reset(seed=0)
+        obs_new, _ = env_new.reset(seed=0)
+
+        np.testing.assert_array_equal(obs_old, obs_new)
+
+    # ------------------------------------------------------------------
+    # (b) Enabled: obs size grows by exactly n_assets
+    # ------------------------------------------------------------------
+
+    def test_enabled_obs_size_grows_by_n_assets(self) -> None:
+        """With flag on, observation size = old size + n_assets."""
+        n_assets = 3
+        window_size = 20
+        data, symbols = _make_env_data(n_steps=200, n_assets=n_assets)
+        n_features = 3  # rsi_14_norm, sma_20_norm, ema_20_norm
+
+        env_off = TradingEnv(
+            data=data, symbols=symbols, initial_balance=10000.0,
+            trading_fee_pct=0.001, slippage_pct=0.0005,
+            window_size=window_size, reward_scaling=1.0, max_position=1.0,
+            cross_sectional_momentum=False,
+        )
+        env_on = TradingEnv(
+            data=data, symbols=symbols, initial_balance=10000.0,
+            trading_fee_pct=0.001, slippage_pct=0.0005,
+            window_size=window_size, reward_scaling=1.0, max_position=1.0,
+            cross_sectional_momentum=True, momentum_window=10,
+        )
+
+        expected_off = window_size * n_assets * n_features + n_assets + 1
+        assert env_off.observation_space.shape == (expected_off,)
+        assert env_on.observation_space.shape == (expected_off + n_assets,)
+
+    # ------------------------------------------------------------------
+    # (c) Hand-computed 3-asset toy
+    # ------------------------------------------------------------------
+
+    def test_hand_computed_momentum_values(self) -> None:
+        """Momentum values match hand-computed z-scored returns.
+
+        Prices are constant per asset across all time steps (known values),
+        so returns over any window are exact and easy to verify by hand.
+        We then spike each asset's price at a single point to create a
+        known non-trivial return over the momentum_window.
+
+        Setup:
+          3 assets, n_steps=100, window_size=20, momentum_window=5
+          We set prices so that:
+            Asset 0: doubles  over [idx_past..idx_now] => raw_ret[0] = 1.0
+            Asset 1: stays flat                        => raw_ret[1] = 0.0
+            Asset 2: loses half                        => raw_ret[2] = -0.5
+
+          mean = (1.0 + 0.0 + (-0.5)) / 3 = 0.5 / 3 ≈ 0.16667
+          std  = np.std([1.0, 0.0, -0.5])            ≈ 0.62361
+          mom[0] = (1.0   - mean) / (std + 1e-8)
+          mom[1] = (0.0   - mean) / (std + 1e-8)
+          mom[2] = (-0.5  - mean) / (std + 1e-8)
+        """
+        n_steps = 100
+        n_assets = 3
+        window_size = 20
+        momentum_window = 5
+
+        # Build a price matrix where we control prices at idx_now and idx_past.
+        # For step=0 the agent acts at data_idx=window_size=20.
+        # idx_now  = min(20, n_steps-1) = 20
+        # idx_past = max(20-5, 0)       = 15
+        # We set all prices to base=1.0 everywhere, then override bars 15 and 20.
+        prices = np.ones((n_steps, n_assets), dtype=np.float64)
+        # Asset 0: price doubles from bar 15 to bar 20
+        prices[15, 0] = 1.0
+        prices[20, 0] = 2.0
+        # Asset 1: flat (stays at 1.0 everywhere — raw_ret = 0)
+        # Asset 2: price halves from bar 15 to bar 20
+        prices[15, 2] = 2.0
+        prices[20, 2] = 1.0
+
+        raw_ret = np.array([
+            prices[20, 0] / prices[15, 0] - 1.0,  # 1.0
+            prices[20, 1] / prices[15, 1] - 1.0,  # 0.0
+            prices[20, 2] / prices[15, 2] - 1.0,  # -0.5
+        ])
+        mean_ret = raw_ret.mean()
+        std_ret = raw_ret.std()
+        expected_mom = (raw_ret - mean_ret) / (std_ret + 1e-8)
+
+        env = self._make_momentum_env(
+            n_steps=n_steps,
+            n_assets=n_assets,
+            window_size=window_size,
+            momentum_window=momentum_window,
+            cross_sectional_momentum=True,
+            prices_override=prices,
+        )
+
+        obs, _ = env.reset()
+        # After reset, current_step=0, data_idx=window_size=20
+        # Momentum block is the last n_assets elements of obs
+        actual_mom = obs[-n_assets:].astype(np.float64)
+
+        np.testing.assert_allclose(actual_mom, expected_mom, rtol=1e-5, atol=1e-6)
+
+    # ------------------------------------------------------------------
+    # (d) Zero cross-asset std: all assets identical => mom values ≈ 0
+    # ------------------------------------------------------------------
+
+    def test_zero_std_all_assets_identical_prices(self) -> None:
+        """When all assets have identical returns, momentum values are ≈ 0 and finite."""
+        n_steps = 100
+        n_assets = 3
+        # Same price ramp for every asset => identical returns => std = 0
+        prices = np.tile(np.linspace(100.0, 110.0, n_steps)[:, None], (1, n_assets))
+
+        env = self._make_momentum_env(
+            n_steps=n_steps,
+            n_assets=n_assets,
+            window_size=20,
+            momentum_window=5,
+            cross_sectional_momentum=True,
+            prices_override=prices,
+        )
+        obs, _ = env.reset()
+        mom = obs[-n_assets:]
+
+        assert np.all(np.isfinite(mom)), "Momentum values must be finite when std=0"
+        np.testing.assert_allclose(mom, 0.0, atol=1e-5)
+
+    # ------------------------------------------------------------------
+    # (e) No look-ahead: future price changes don't affect current obs
+    # ------------------------------------------------------------------
+
+    def test_no_lookahead_future_jump_does_not_affect_current_obs(self) -> None:
+        """A price spike at idx_now+1 must not change the momentum at idx_now."""
+        n_steps = 100
+        n_assets = 2
+        window_size = 20
+        momentum_window = 5
+        # current_step=0 => data_idx=20 => idx_now=20, idx_past=15
+
+        # Base prices: uniform across both assets
+        prices_base = np.ones((n_steps, n_assets), dtype=np.float64) * 100.0
+
+        # Variant: same base but with a massive spike AFTER the current decision bar
+        prices_spike = prices_base.copy()
+        prices_spike[21, 0] = 9999.0  # one bar into the future
+
+        env_base = self._make_momentum_env(
+            n_steps=n_steps, n_assets=n_assets, window_size=window_size,
+            momentum_window=momentum_window, cross_sectional_momentum=True,
+            prices_override=prices_base,
+        )
+        env_spike = self._make_momentum_env(
+            n_steps=n_steps, n_assets=n_assets, window_size=window_size,
+            momentum_window=momentum_window, cross_sectional_momentum=True,
+            prices_override=prices_spike,
+        )
+
+        obs_base, _ = env_base.reset()
+        obs_spike, _ = env_spike.reset()
+
+        # Momentum block (last n_assets elements) must be identical
+        np.testing.assert_array_equal(obs_base[-n_assets:], obs_spike[-n_assets:])
+
+    # ------------------------------------------------------------------
+    # (f) momentum_window > window_size raises AssertionError
+    # ------------------------------------------------------------------
+
+    def test_momentum_window_larger_than_window_size_raises(self) -> None:
+        """Constructor must raise AssertionError when momentum_window > window_size."""
+        data, symbols = _make_env_data(n_steps=200, n_assets=2)
+        with pytest.raises(AssertionError, match="momentum_window"):
+            TradingEnv(
+                data=data, symbols=symbols, initial_balance=10000.0,
+                trading_fee_pct=0.001, slippage_pct=0.0005,
+                window_size=10, reward_scaling=1.0, max_position=1.0,
+                cross_sectional_momentum=True,
+                momentum_window=11,  # > window_size=10
+            )
+
+    # ------------------------------------------------------------------
+    # State validity: _assert_state_valid covers extended obs
+    # ------------------------------------------------------------------
+
+    def test_assert_state_valid_covers_momentum_values(self) -> None:
+        """_assert_state_valid must pass throughout a full episode with momentum on."""
+        env = self._make_momentum_env(
+            n_steps=200, n_assets=2, window_size=20, momentum_window=10,
+            cross_sectional_momentum=True,
+        )
+        obs, _ = env.reset()
+        assert np.all(np.isfinite(obs))
+
+        rng = np.random.RandomState(42)
+        done = False
+        while not done:
+            action = rng.uniform(-1, 1, size=env.n_assets).astype(np.float32)
+            obs, _, terminated, truncated, _ = env.step(action)
+            assert np.all(np.isfinite(obs)), f"Non-finite obs encountered: {obs}"
+            done = terminated or truncated
+
+
 class TestTurnoverPenalty:
     """Tests for the turnover_penalty_coef reward adjustment.
 

@@ -293,6 +293,8 @@ def create_trading_env(
         max_position=env_config.max_position,
         rebalance_threshold=env_config.rebalance_threshold,
         turnover_penalty_coef=env_config.turnover_penalty_coef,
+        cross_sectional_momentum=env_config.cross_sectional_momentum,
+        momentum_window=env_config.momentum_window,
     )
 
 

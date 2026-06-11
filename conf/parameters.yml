@@ -106,6 +106,8 @@ environment:
   max_position: 1.0
   rebalance_threshold: 0.0  # skip trades below this fraction of portfolio value (no-trade band)
   turnover_penalty_coef: 0.0  # reward penalty per unit turnover (traded value / portfolio value)
+  cross_sectional_momentum: false  # append n_assets cross-sectional momentum values to observation
+  momentum_window: 12  # lookback bars for cross-sectional momentum (must be <= window_size)
 
 # ──────────────────────────────────────────────
 # Training
