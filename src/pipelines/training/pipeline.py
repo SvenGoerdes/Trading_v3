@@ -254,6 +254,7 @@ def _flatten_config_params(config) -> dict[str, str]:
         "window_size": str(config.environment.window_size),
         "reward_scaling": str(config.environment.reward_scaling),
         "max_position": str(config.environment.max_position),
+        "rebalance_threshold": str(config.environment.rebalance_threshold),
         # Portfolio
         "initial_balance": str(config.initial_balance),
         "trading_fee_pct": str(config.trading_fee_pct),

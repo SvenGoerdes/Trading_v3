@@ -436,6 +436,33 @@ class TestWriteProvenance:
         assert any("Could not copy config" in r.message for r in caplog.records)
 
 
+class TestRebalanceThresholdConfig:
+    """Tests for the new rebalance_threshold field in EnvironmentConfig."""
+
+    def test_default_zero_when_absent(self, valid_yaml: Path) -> None:
+        """rebalance_threshold defaults to 0.0 when not in YAML."""
+        raw = load_yaml(valid_yaml)
+        # The fixture does not include rebalance_threshold — it must default to 0.0
+        assert "rebalance_threshold" not in raw["environment"]
+        config = parse_config(raw)
+        assert config.environment.rebalance_threshold == pytest.approx(0.0)
+
+    def test_parsed_when_present(self, valid_yaml: Path) -> None:
+        """rebalance_threshold is correctly parsed when present in YAML."""
+        raw = load_yaml(valid_yaml)
+        raw["environment"]["rebalance_threshold"] = 0.05
+        config = parse_config(raw)
+        assert config.environment.rebalance_threshold == pytest.approx(0.05)
+
+    def test_immutable(self, valid_yaml: Path) -> None:
+        """rebalance_threshold field must be immutable (frozen dataclass)."""
+        from dataclasses import FrozenInstanceError
+
+        config = parse_config(load_yaml(valid_yaml))
+        with pytest.raises(FrozenInstanceError):
+            config.environment.rebalance_threshold = 0.1  # type: ignore[misc]
+
+
 class TestComputeDataFingerprint:
     """Tests for _compute_data_fingerprint."""
 

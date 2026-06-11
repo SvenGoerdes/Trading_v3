@@ -106,6 +106,7 @@ class EnvironmentConfig:
     window_size: int
     reward_scaling: float
     max_position: float
+    rebalance_threshold: float
 
 
 @dataclass(frozen=True)
@@ -222,6 +223,7 @@ def parse_config(raw: dict) -> AppConfig:
             window_size=raw["environment"]["window_size"],
             reward_scaling=raw["environment"]["reward_scaling"],
             max_position=raw["environment"]["max_position"],
+            rebalance_threshold=raw["environment"].get("rebalance_threshold", 0.0),
         ),
         training=TrainingConfig(
             seeds=raw["training"]["seeds"],

@@ -228,3 +228,66 @@ class TestObservation:
         cash_ratio = obs[-1]
         total = float(np.sum(weights)) + cash_ratio
         assert total == pytest.approx(1.0, abs=0.01)
+
+
+class TestRebalanceThresholdWiring:
+    """Verify rebalance_threshold is accepted by TradingEnv and wired to step()."""
+
+    def test_default_threshold_zero(self) -> None:
+        """Default TradingEnv has rebalance_threshold=0.0."""
+        env = _make_env()
+        assert env.rebalance_threshold == pytest.approx(0.0)
+
+    def test_threshold_stored(self) -> None:
+        """Explicit rebalance_threshold is stored on the env."""
+        data, symbols = _make_env_data(n_steps=200, n_assets=1)
+        env = TradingEnv(
+            data=data,
+            symbols=symbols,
+            initial_balance=10000.0,
+            trading_fee_pct=0.001,
+            slippage_pct=0.0005,
+            window_size=10,
+            reward_scaling=1.0,
+            max_position=1.0,
+            rebalance_threshold=0.05,
+        )
+        assert env.rebalance_threshold == pytest.approx(0.05)
+
+    def test_high_threshold_suppresses_small_trade(self) -> None:
+        """With a very high threshold, a modest action change produces zero cost.
+
+        We create a 1-asset env with a fixed price (all steps same price) and
+        an extremely high rebalance_threshold (1.0 = 100% of portfolio value).
+        Any non-zero target will have a trade value < 100% of PV only when
+        the action is very small — but with threshold=1.0 the minimum trade
+        required is *equal to* the entire portfolio value, so nearly every
+        trade is skipped.
+
+        We use all-zero action (weight=0.0) after a previous step that also
+        had weight=0.0 so holdings are 0; then a small positive action that
+        maps to weight=0.01 (0.5% of PV buys 0.01*PV/$price shares).
+        With threshold=1.0, min_trade=PV, and trade_value=0.01*PV < PV => skipped.
+        """
+        data, symbols = _make_env_data(n_steps=200, n_assets=1)
+
+        env = TradingEnv(
+            data=data,
+            symbols=symbols,
+            initial_balance=10000.0,
+            trading_fee_pct=0.001,
+            slippage_pct=0.0005,
+            window_size=10,
+            reward_scaling=1.0,
+            max_position=1.0,
+            rebalance_threshold=1.0,  # impossible to meet — every trade skipped
+        )
+        env.reset()
+
+        # Action maps [-1,1] -> [0,1]: action=-0.98 -> weight=0.01 (1% of PV)
+        action = np.array([-0.98], dtype=np.float32)
+        _, _, _, _, info = env.step(action)
+
+        # With threshold=1.0, min_trade=10000 >> any actual trade value => skipped
+        assert info["total_cost"] == pytest.approx(0.0)
+        assert env.balance == pytest.approx(10000.0)

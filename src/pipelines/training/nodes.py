@@ -291,6 +291,7 @@ def create_trading_env(
         window_size=env_config.window_size,
         reward_scaling=env_config.reward_scaling,
         max_position=env_config.max_position,
+        rebalance_threshold=env_config.rebalance_threshold,
     )
 
 

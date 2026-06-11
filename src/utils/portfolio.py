@@ -86,12 +86,20 @@ def execute_rebalance(
     prices: NDArray[np.float64],
     trading_fee_pct: float,
     slippage_pct: float,
+    rebalance_threshold: float = 0.0,
 ) -> tuple[float, NDArray[np.float64], float]:
-    """Execute portfolio rebalance with sell-first priority.
+    """Execute portfolio rebalance with sell-first priority and optional no-trade band.
 
     Sells are executed first to free up cash, then buys are executed.
     If insufficient cash for all buys, partial fills are applied
     proportionally.
+
+    No-trade band: when ``rebalance_threshold > 0``, any individual asset trade
+    whose absolute traded value (``abs(delta_shares) * price``) is strictly less
+    than ``rebalance_threshold * portfolio_value`` (computed once at entry, before
+    any trades) is skipped entirely — both in the sell phase and the buy phase.
+    Setting ``rebalance_threshold=0.0`` (the default) disables the band and
+    preserves bit-for-bit identical behaviour to the original implementation.
 
     Args:
         current_balance: Current cash balance.
@@ -100,6 +108,9 @@ def execute_rebalance(
         prices: Current prices per asset.
         trading_fee_pct: Trading fee as a fraction.
         slippage_pct: Slippage as a fraction.
+        rebalance_threshold: Minimum trade size as a fraction of total portfolio
+            value.  Trades with ``abs(delta) * price < threshold * pv`` are
+            skipped.  Default 0.0 means no trade is ever skipped.
 
     Returns:
         Tuple of (new_balance, new_holdings, total_cost).
@@ -107,28 +118,38 @@ def execute_rebalance(
     assert current_balance >= 0, f"Negative balance: {current_balance}"
     assert np.all(current_holdings >= 0), f"Negative holdings: {current_holdings}"
 
+    # Compute portfolio value once, pre-trade — single source of truth.
+    portfolio_value = compute_portfolio_value(current_balance, current_holdings, prices)
+    min_trade_value = rebalance_threshold * portfolio_value
+
     deltas = target_holdings - current_holdings
     new_holdings = current_holdings.copy()
     new_balance = current_balance
     total_cost = 0.0
 
     # Phase 1: Sell (deltas < 0)
-    sell_mask = deltas < 0
-    if np.any(sell_mask):
-        sell_shares = np.abs(deltas[sell_mask])
-        sell_values = sell_shares * prices[sell_mask]
-        sell_costs = np.array([
-            compute_transaction_cost(v, trading_fee_pct, slippage_pct) for v in sell_values
-        ])
-        new_holdings[sell_mask] -= sell_shares
-        new_balance += float(np.sum(sell_values - sell_costs))
-        total_cost += float(np.sum(sell_costs))
+    sell_indices = np.where(deltas < 0)[0]
+    for idx in sell_indices:
+        sell_shares = abs(deltas[idx])
+        trade_value = sell_shares * prices[idx]
+        if trade_value < min_trade_value:
+            continue
+        cost = compute_transaction_cost(trade_value, trading_fee_pct, slippage_pct)
+        new_holdings[idx] -= sell_shares
+        new_balance += trade_value - cost
+        total_cost += cost
 
-    # Phase 2: Buy (deltas > 0)
-    buy_mask = deltas > 0
-    if np.any(buy_mask):
-        buy_shares = deltas[buy_mask]
-        buy_values = buy_shares * prices[buy_mask]
+    # Phase 2: Buy (deltas > 0) — filter by band before computing totals
+    buy_indices = np.where(deltas > 0)[0]
+    active_buy_indices = [
+        idx for idx in buy_indices
+        if deltas[idx] * prices[idx] >= min_trade_value
+    ]
+
+    if active_buy_indices:
+        buy_idx_arr = np.array(active_buy_indices)
+        buy_shares = deltas[buy_idx_arr]
+        buy_values = buy_shares * prices[buy_idx_arr]
         buy_costs = np.array([
             compute_transaction_cost(v, trading_fee_pct, slippage_pct) for v in buy_values
         ])
@@ -136,18 +157,18 @@ def execute_rebalance(
 
         if total_buy_needed <= new_balance:
             # Full fill
-            new_holdings[buy_mask] += buy_shares
+            new_holdings[buy_idx_arr] += buy_shares
             new_balance -= total_buy_needed
             total_cost += float(np.sum(buy_costs))
         elif new_balance > 0:
             # Partial fill — scale down proportionally
             fill_ratio = new_balance / total_buy_needed
             partial_shares = buy_shares * fill_ratio
-            partial_values = partial_shares * prices[buy_mask]
+            partial_values = partial_shares * prices[buy_idx_arr]
             partial_costs = np.array([
                 compute_transaction_cost(v, trading_fee_pct, slippage_pct) for v in partial_values
             ])
-            new_holdings[buy_mask] += partial_shares
+            new_holdings[buy_idx_arr] += partial_shares
             new_balance -= float(np.sum(partial_values + partial_costs))
             total_cost += float(np.sum(partial_costs))
 

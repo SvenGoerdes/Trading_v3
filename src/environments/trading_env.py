@@ -40,6 +40,9 @@ class TradingEnv(gym.Env):
         window_size: Number of lookback steps for observation.
         reward_scaling: Multiplier for the log-return reward.
         max_position: Maximum weight per asset (0 to 1).
+        rebalance_threshold: Minimum trade size as a fraction of portfolio
+            value.  Trades below this threshold are skipped (no-trade band).
+            Default 0.0 disables the band.
     """
 
     metadata = {"render_modes": []}
@@ -54,6 +57,7 @@ class TradingEnv(gym.Env):
         window_size: int,
         reward_scaling: float,
         max_position: float,
+        rebalance_threshold: float = 0.0,
     ) -> None:
         super().__init__()
         self.symbols = symbols
@@ -64,6 +68,7 @@ class TradingEnv(gym.Env):
         self.window_size = window_size
         self.reward_scaling = reward_scaling
         self.max_position = max_position
+        self.rebalance_threshold = rebalance_threshold
 
         self._build_data_arrays(data)
 
@@ -176,6 +181,7 @@ class TradingEnv(gym.Env):
             current_prices,
             self.trading_fee_pct,
             self.slippage_pct,
+            rebalance_threshold=self.rebalance_threshold,
         )
 
         self.current_step += 1

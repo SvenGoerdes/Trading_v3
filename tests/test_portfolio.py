@@ -201,3 +201,145 @@ class TestExecuteRebalance:
         trade_value = 10.0 * 100.0  # 1000
         expected_total_cost = 2 * fee_rate * trade_value  # 2 * 0.0015 * 1000 = 3.0
         assert cost1 + cost2 == pytest.approx(expected_total_cost)
+
+
+class TestRebalanceThreshold:
+    """Tests for the no-trade band (rebalance_threshold) feature.
+
+    All expected values are hand-computed.
+    Setup: balance=1000, holdings=[10], price=[100]
+      portfolio_value = 1000 + 10*100 = 2000
+    """
+
+    def test_band_skips_small_buy(self) -> None:
+        """Trade below threshold is skipped entirely.
+
+        Setup: balance=1000, holdings=[10], price=[100] => pv=2000.
+        Target [10.5]: delta=0.5 shares, trade_value=0.5*100=$50=2.5% of pv.
+        threshold=0.05 => min_trade=$100. $50 < $100 => skipped.
+        """
+        balance = 1000.0
+        holdings = np.array([10.0])
+        target = np.array([10.5])
+        prices = np.array([100.0])
+        fee = 0.001
+        slip = 0.0005
+
+        new_bal, new_hold, cost = execute_rebalance(
+            balance, holdings, target, prices, fee, slip, rebalance_threshold=0.05
+        )
+
+        assert new_bal == pytest.approx(1000.0)
+        assert new_hold[0] == pytest.approx(10.0)
+        assert cost == pytest.approx(0.0)
+
+    def test_band_executes_large_buy(self) -> None:
+        """Trade above threshold is executed in full.
+
+        Setup: balance=1000, holdings=[10], price=[100] => pv=2000.
+        Target [15]: delta=5 shares, trade_value=5*100=$500=25% of pv.
+        threshold=0.05 => min_trade=$100. $500 >= $100 => executes.
+
+        Hand-computed:
+          buy 5 shares at 100 = $500
+          cost = 500 * (0.001 + 0.0005) = 500 * 0.0015 = 0.75
+          total deducted = 500 + 0.75 = 500.75
+          new_balance = 1000 - 500.75 = 499.25
+        """
+        balance = 1000.0
+        holdings = np.array([10.0])
+        target = np.array([15.0])
+        prices = np.array([100.0])
+        fee = 0.001
+        slip = 0.0005
+
+        new_bal, new_hold, cost = execute_rebalance(
+            balance, holdings, target, prices, fee, slip, rebalance_threshold=0.05
+        )
+
+        assert new_hold[0] == pytest.approx(15.0)
+        assert cost == pytest.approx(0.75)
+        assert new_bal == pytest.approx(499.25)
+
+    def test_threshold_zero_identical_to_no_threshold(self) -> None:
+        """Explicit threshold=0.0 must produce bit-for-bit identical results.
+
+        Uses the existing buy_from_cash scenario:
+          balance=10000, holdings=[0], target=[10], price=[100], fee=0.001, slip=0.0005
+          cost = 1000 * 0.0015 = 1.5
+          new_balance = 10000 - 1001.5 = 8998.5
+        """
+        balance = 10000.0
+        holdings = np.array([0.0])
+        target = np.array([10.0])
+        prices = np.array([100.0])
+        fee = 0.001
+        slip = 0.0005
+
+        new_bal_default, new_hold_default, cost_default = execute_rebalance(
+            balance, holdings, target, prices, fee, slip
+        )
+        new_bal_zero, new_hold_zero, cost_zero = execute_rebalance(
+            balance, holdings, target, prices, fee, slip, rebalance_threshold=0.0
+        )
+
+        assert new_bal_zero == pytest.approx(new_bal_default)
+        assert new_hold_zero[0] == pytest.approx(new_hold_default[0])
+        assert cost_zero == pytest.approx(cost_default)
+
+    def test_band_mixed_two_assets(self) -> None:
+        """Two assets: one delta below band (skipped), one above (executed).
+
+        Setup:
+          balance=1000, holdings=[10, 20], prices=[100, 50]
+          portfolio_value = 1000 + 10*100 + 20*50 = 1000 + 1000 + 1000 = 3000
+          threshold=0.05 => min_trade = 0.05 * 3000 = $150
+
+        Asset 0: target=10.5, delta=0.5, trade_value=0.5*100=$50 < $150 => SKIPPED
+        Asset 1: target=25, delta=5, trade_value=5*50=$250 >= $150 => EXECUTED
+
+        Hand-computed for asset 1 buy:
+          buy 5 shares at 50 = $250
+          cost = 250 * (0.001 + 0.0005) = 250 * 0.0015 = 0.375
+          total deducted = 250 + 0.375 = 250.375
+          new_balance = 1000 - 250.375 = 749.625
+        """
+        balance = 1000.0
+        holdings = np.array([10.0, 20.0])
+        target = np.array([10.5, 25.0])
+        prices = np.array([100.0, 50.0])
+        fee = 0.001
+        slip = 0.0005
+
+        new_bal, new_hold, cost = execute_rebalance(
+            balance, holdings, target, prices, fee, slip, rebalance_threshold=0.05
+        )
+
+        # Asset 0 skipped (trade too small)
+        assert new_hold[0] == pytest.approx(10.0)
+        # Asset 1 executed
+        assert new_hold[1] == pytest.approx(25.0)
+        assert cost == pytest.approx(0.375)
+        assert new_bal == pytest.approx(749.625)
+
+    def test_band_skips_small_sell(self) -> None:
+        """Small sell delta below the band is also skipped.
+
+        Setup: balance=1000, holdings=[10], price=[100] => pv=2000.
+        Target [9.5]: delta=-0.5 shares, trade_value=0.5*100=$50=2.5% of pv.
+        threshold=0.05 => min_trade=$100. $50 < $100 => skipped.
+        """
+        balance = 1000.0
+        holdings = np.array([10.0])
+        target = np.array([9.5])
+        prices = np.array([100.0])
+        fee = 0.001
+        slip = 0.0005
+
+        new_bal, new_hold, cost = execute_rebalance(
+            balance, holdings, target, prices, fee, slip, rebalance_threshold=0.05
+        )
+
+        assert new_bal == pytest.approx(1000.0)
+        assert new_hold[0] == pytest.approx(10.0)
+        assert cost == pytest.approx(0.0)

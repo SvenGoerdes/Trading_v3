@@ -104,6 +104,7 @@ environment:
   window_size: 50
   reward_scaling: 1.0
   max_position: 1.0
+  rebalance_threshold: 0.0  # skip trades below this fraction of portfolio value (no-trade band)
 
 # ──────────────────────────────────────────────
 # Training
