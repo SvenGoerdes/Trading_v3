@@ -3,7 +3,33 @@
 Journal aller Experimente des autonomen Optimierungs-Loops. Regeln: siehe [PROTOCOL.md](PROTOCOL.md).
 Maschinenlesbare Version: [ledger.jsonl](ledger.jsonl). Modelle: `models/<exp_id>/` (nie überschrieben).
 
-Aktueller Champion: **EXP-001 (mean val Sharpe −9.08)**
+Aktueller Champion: **EXP-002 (mean val Sharpe −5.99)** — No-Trade-Band 0.05
+
+---
+
+## EXP-002 — 2026-06-11 — No-Trade-Band (rebalance_threshold 0.05)
+**Hypothese:** Verlust war in EXP-001 fast vollständig kostengetrieben (~52 % Kapital in
+  Gebühren, ~41k Trades/Fold). Ein No-Trade-Band (Asset nur rebalancieren, wenn
+  |Ziel−Ist-Gewicht| > 5 %pt) killt den Per-Step-Micro-Churn und senkt die Kosten drastisch.
+**Änderung:** environment.rebalance_threshold: 0.0 → 0.05   (Basis: EXP-001)
+**Basis:** Commit 00c71bf, data_fingerprint `ec2e07548f555da2` (gepaart mit EXP-001)
+**Budget:** 200k Steps × 2 Seeds × 2 Folds
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **−5.99** (std 0.16) | MaxDD **0.54** | CPR 0.59
+  Pro Fold: S42 F0 −7.77 / F1 −4.52 · S123 F0 −8.47 / F1 −3.19 (alle 4 Läufe besser als EXP-001)
+**Entscheidung:** ⭐ ADOPTIERT → neuer Champion. Delta +3.09 ≫ 0.05-Schwelle, MaxDD besser
+  (0.54 vs 0.62), kein Crash/NaN. Vorläufig bis Confirmation (1M Steps, 5 Seeds).
+**Modelle:** `models/exp_002/`
+**MLflow:** Runs `seed_42` (adf3a5eb), `seed_123` (4b48caa6), Experiment `td3_crypto_trading`
+**Learnings:** Das Band wirkt rein **mechanisch** (Env-Filter, keine gelernte Politik —
+  reward_mean halbiert auf −4.5e-5, Reward-SNR sogar gesunken 0.056 → 0.021, Actions weiter
+  bei ±1 gesättigt). total_cost **5.162 → 3.181** (−38 %), Trades **~41.5k → ~1.8k/Fold**
+  (~23× weniger). **Aber:** Brutto-Rendite (vor Kosten) ~−10.6 % → −14.5 % leicht
+  schlechter; Restverlust weiter **kostendominiert** (32 von 46 %pt), gleichzeitig **kein
+  Direktions-Edge**: win_rate 0.47, profit_factor 0.74, SMA20-Timing ~52/47, Regime-Sharpe
+  Uptrend ~−89 / Downtrend ~−80 / Sideways ~−4. → Kosten-Hebel noch nicht ausgereizt:
+  nächstes Experiment **Band 0.05 → 0.10** (EXP-003). Danach Verzweigung Richtung
+  Signal/Reward-Shaping, sobald das Band plateaut.
 
 ---
 

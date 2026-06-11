@@ -78,10 +78,10 @@ td3:
   learning_rate:
     actor: 0.0001
     critic: 0.0003
-  
+
   # Crucial for stable convergence in crypto
   lr_schedule: "linear" # or "cosine"
-  
+
   gamma: 0.99
   tau: 0.005
   batch_size: 512
@@ -92,7 +92,7 @@ td3:
   target_noise_clip: 0.5
   target_policy_noise: 0.2
   action_noise_std: 0.1
-  total_timesteps: 1000000
+  total_timesteps: 200000   # screening budget
   net_arch:
     pi: [256, 128]
     qf: [256, 128]
@@ -104,20 +104,29 @@ environment:
   window_size: 50
   reward_scaling: 1.0
   max_position: 1.0
-  rebalance_threshold: 0.05 # skip trades below this fraction of portfolio value (no-trade band)
+  # EXP-003 CHANGE — widen the no-trade band 0.05 -> 0.10 (base = NEW champion EXP-002).
+  # EXP-002 showed the band is the dominant lever: 0.0 -> 0.05 cut total_cost by 38%
+  # (5162 -> 3181 of 10000) and trades by ~96% (41.5k -> 1.8k), lifting mean val Sharpe
+  # -9.08 -> -5.99. But cost still drags ~32 of the residual ~46 pts of loss, and gross
+  # (pre-cost) return is ~-14% with no directional edge (win_rate 0.47, timing ~52/47 vs
+  # SMA20, regime Sharpe up ~-89 / down ~-80). Since cost still dominates the residual and
+  # the band is a proven, monotone-so-far lever, 0.10 should cut cost roughly another third.
+  # Risk: too wide -> agent under-rebalances and tracks worse; watch gross return + turnover.
+  # Pure config change — no code change required (band fully implemented in utils/portfolio.py).
+  rebalance_threshold: 0.10
 
 # ──────────────────────────────────────────────
 # Training
 # ──────────────────────────────────────────────
 training:
-  seeds: [42, 123, 456, 789, 1024]
+  seeds: [42, 123]
   cv_train_months: 2
   cv_validation_months: 1
   model_dir: "models"
   mlflow_experiment_name: "td3_crypto_trading"
   mlflow_tracking_uri: "mlruns"
   progress_log_every_steps: 10000
-  max_folds: null  # limit CV folds, null = all folds
+  max_folds: 2
 
 # ──────────────────────────────────────────────
 # Backtesting
