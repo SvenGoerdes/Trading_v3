@@ -26,7 +26,7 @@ slippage_pct: 0.0005         # 0.05% slippage estimate
 # Data Engineering
 # ──────────────────────────────────────────────
 data:
-  lookback_days: 120
+  lookback_days: 365
   missing_candle_policy:
     ffill_limit: 3
     stale_flag_limit: 20

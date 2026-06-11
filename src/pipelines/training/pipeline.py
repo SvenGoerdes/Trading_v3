@@ -6,6 +6,7 @@ Gymnasium trading environment. Logs metrics to MLflow.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -63,12 +64,45 @@ def _get_git_commit() -> str:
         return "unknown"
 
 
+def _compute_data_fingerprint(splits_dir: str | Path) -> str:
+    """Compute a content-based SHA-256 fingerprint of training parquet files.
+
+    Streams all ``*_train.parquet`` files in sorted order into a single
+    SHA-256 digest. Both the file name and file content are included so
+    that renames and content changes each alter the fingerprint.
+
+    Args:
+        splits_dir: Directory containing the split parquet files.
+
+    Returns:
+        First 16 hex characters of the SHA-256 digest, or ``"empty"``
+        when no matching files are found.
+    """
+    chunk_size = 1024 * 1024  # 1 MiB
+    train_files = sorted(Path(splits_dir).glob("*_train.parquet"))
+    if not train_files:
+        return "empty"
+
+    digest = hashlib.sha256()
+    for file_path in train_files:
+        digest.update(file_path.name.encode())
+        with open(file_path, "rb") as fh:
+            while True:
+                chunk = fh.read(chunk_size)
+                if not chunk:
+                    break
+                digest.update(chunk)
+
+    return digest.hexdigest()[:16]
+
+
 def _write_provenance(
     model_dir: Path,
     git_commit: str,
     config_source: str,
     experiment_id: str | None,
     created_utc: str,
+    data_fingerprint: str = "",
 ) -> None:
     """Copy config snapshot and write provenance.json into model_dir.
 
@@ -78,6 +112,7 @@ def _write_provenance(
         config_source: Resolved path to the config YAML that was used.
         experiment_id: EXPERIMENT_ID env value, or None if not set.
         created_utc: ISO-8601 UTC timestamp for when this run started.
+        data_fingerprint: 16-hex-char SHA-256 of training parquet content.
     """
     # Config snapshot — copy2 preserves metadata
     config_dest = model_dir / "config_used.yml"
@@ -91,6 +126,7 @@ def _write_provenance(
         "config_source": config_source,
         "experiment_id": experiment_id,
         "created_utc": created_utc,
+        "data_fingerprint": data_fingerprint,
     }
     provenance_path = model_dir / "provenance.json"
     with open(provenance_path, "w") as fh:
@@ -109,6 +145,7 @@ def _write_experiment_results(
     per_seed: dict[str, list[dict[str, float]]],
     model_dir: Path | None = None,
     seed_model_paths: dict[int, str | None] | None = None,
+    data_fingerprint: str = "",
 ) -> Path:
     """Write cross-seed experiment results to a JSON file.
 
@@ -122,6 +159,7 @@ def _write_experiment_results(
         per_seed: Dict mapping seed string to list of per-fold metric dicts.
         model_dir: Directory where models for this run were saved.
         seed_model_paths: Dict mapping seed int to best-model .zip path (or None).
+        data_fingerprint: 16-hex-char SHA-256 of training parquet content.
 
     Returns:
         Path to the written JSON file.
@@ -139,6 +177,7 @@ def _write_experiment_results(
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "git_commit": git_commit,
         "config_path": config_path,
+        "data_fingerprint": data_fingerprint,
         "model_dir": str(model_dir) if model_dir is not None else None,
         "models": models_map,
         "n_seeds": n_seeds,
@@ -248,6 +287,8 @@ def run() -> None:
     # 1. Load data
     logger.info("Loading training data from %s", splits_dir)
     data = _load_train_data(splits_dir, symbols)
+    data_fingerprint = _compute_data_fingerprint(splits_dir)
+    logger.info("data_fingerprint=%s", data_fingerprint)
 
     # 2. Generate CV folds
     folds = generate_rolling_cv_folds(
@@ -281,6 +322,7 @@ def run() -> None:
         config_source=resolved_config_path,
         experiment_id=experiment_id,
         created_utc=run_started_utc,
+        data_fingerprint=data_fingerprint,
     )
 
     config_params = _flatten_config_params(config)
@@ -302,6 +344,7 @@ def run() -> None:
             mlflow.log_param("seed", seed)
             mlflow.log_param("n_folds", len(folds))
             mlflow.log_param("git_commit", git_commit)
+            mlflow.log_param("data_fingerprint", data_fingerprint)
 
             pin_random_seeds(seed)
 
@@ -503,4 +546,5 @@ def run() -> None:
         per_seed=per_seed_fold_metrics,
         model_dir=model_dir,
         seed_model_paths=seed_model_paths,
+        data_fingerprint=data_fingerprint,
     )

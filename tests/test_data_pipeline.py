@@ -5,10 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import ccxt
 import pandas as pd
 import pytest
 
 from src.pipelines.data_engineering.nodes import (
+    FETCH_MAX_RETRIES,
+    _fetch_with_retry,
     clean_ohlcv,
     clean_single_symbol,
     detect_candle_gaps,
@@ -162,6 +165,52 @@ class TestFetchOhlcv:
             exchange=exchange,
         )
         assert result["BTC/USDT"].empty
+
+
+# ── _fetch_with_retry ───────────────────────────────────────────────────
+
+
+class TestFetchWithRetry:
+    """Tests for the _fetch_with_retry helper (I/O layer — mocking allowed)."""
+
+    VALID_CANDLES = [[1704067200000, 100.0, 105.0, 95.0, 102.0, 1000.0]]
+
+    def test_retry_succeeds_after_transient_errors(self, mocker) -> None:
+        """fetch_ohlcv raises RequestTimeout twice then returns data → success, 3 calls."""
+        exchange = MagicMock()
+        exchange.fetch_ohlcv.side_effect = [
+            ccxt.RequestTimeout("timeout"),
+            ccxt.RequestTimeout("timeout"),
+            self.VALID_CANDLES,
+        ]
+        mocker.patch("time.sleep")
+
+        result = _fetch_with_retry(exchange, "BTC/USDT", "5m", 1704067200000, 1000)
+
+        assert result == self.VALID_CANDLES
+        assert exchange.fetch_ohlcv.call_count == 3
+
+    def test_retry_exhausted_raises(self, mocker) -> None:
+        """fetch_ohlcv always raises → exception propagates after FETCH_MAX_RETRIES calls."""
+        exchange = MagicMock()
+        exchange.fetch_ohlcv.side_effect = ccxt.RequestTimeout("timeout")
+        mocker.patch("time.sleep")
+
+        with pytest.raises(ccxt.NetworkError):
+            _fetch_with_retry(exchange, "BTC/USDT", "5m", 1704067200000, 1000)
+
+        assert exchange.fetch_ohlcv.call_count == FETCH_MAX_RETRIES
+
+    def test_non_network_error_not_retried(self, mocker) -> None:
+        """Non-network ccxt error (BadSymbol) is NOT retried — raises after 1 call."""
+        exchange = MagicMock()
+        exchange.fetch_ohlcv.side_effect = ccxt.BadSymbol("unknown symbol")
+        mocker.patch("time.sleep")
+
+        with pytest.raises(ccxt.BadSymbol):
+            _fetch_with_retry(exchange, "INVALID/USDT", "5m", 1704067200000, 1000)
+
+        assert exchange.fetch_ohlcv.call_count == 1
 
 
 # ── detect_candle_gaps ───────────────────────────────────────────────────

@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src.pipelines.training.pipeline import _write_experiment_results, _write_provenance
+from src.pipelines.training.pipeline import (
+    _compute_data_fingerprint,
+    _write_experiment_results,
+    _write_provenance,
+)
 from src.utils.config import (
     AppConfig,
     DataConfig,
@@ -244,6 +248,7 @@ class TestWriteExperimentResults:
             n_folds=1,
             aggregate=aggregate,
             per_seed=per_seed,
+            data_fingerprint="abcdef1234567890",
         )
 
         assert output_path.exists()
@@ -258,6 +263,7 @@ class TestWriteExperimentResults:
         assert payload["aggregate"] == aggregate
         assert payload["per_seed"] == per_seed
         assert "timestamp" in payload
+        assert payload["data_fingerprint"] == "abcdef1234567890"
 
     def test_includes_model_dir_and_models_keys(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -346,6 +352,7 @@ class TestWriteProvenance:
             config_source=str(config_src),
             experiment_id="exp_42",
             created_utc="2024-01-01T12:00:00+00:00",
+            data_fingerprint="deadbeef01234567",
         )
 
         provenance_path = model_dir / "provenance.json"
@@ -358,6 +365,7 @@ class TestWriteProvenance:
         assert data["config_source"] == str(config_src)
         assert data["experiment_id"] == "exp_42"
         assert data["created_utc"] == "2024-01-01T12:00:00+00:00"
+        assert data["data_fingerprint"] == "deadbeef01234567"
 
     def test_copies_config_yaml(self, tmp_path: Path) -> None:
         """config_used.yml must be a copy of the source config."""
@@ -426,3 +434,63 @@ class TestWriteProvenance:
         assert not (model_dir / "config_used.yml").exists()
         # Warning must have been emitted
         assert any("Could not copy config" in r.message for r in caplog.records)
+
+
+class TestComputeDataFingerprint:
+    """Tests for _compute_data_fingerprint."""
+
+    def _write_parquet(self, path: Path) -> None:
+        """Write a minimal parquet file at *path*."""
+        import pandas as pd
+
+        pd.DataFrame({"a": [1, 2]}).to_parquet(path)
+
+    def test_deterministic(self, tmp_path: Path) -> None:
+        """Same directory state must yield the same fingerprint on two calls."""
+        self._write_parquet(tmp_path / "AAA_train.parquet")
+        self._write_parquet(tmp_path / "BBB_train.parquet")
+
+        first = _compute_data_fingerprint(tmp_path)
+        second = _compute_data_fingerprint(tmp_path)
+
+        assert first == second
+
+    def test_content_change_alters_fingerprint(self, tmp_path: Path) -> None:
+        """Changing a file's content must produce a different fingerprint."""
+        import pandas as pd
+
+        train_file = tmp_path / "AAA_train.parquet"
+        pd.DataFrame({"a": [1, 2]}).to_parquet(train_file)
+        fp_before = _compute_data_fingerprint(tmp_path)
+
+        # Overwrite with different content
+        pd.DataFrame({"a": [99, 100]}).to_parquet(train_file)
+        fp_after = _compute_data_fingerprint(tmp_path)
+
+        assert fp_before != fp_after
+
+    def test_test_parquet_not_included(self, tmp_path: Path) -> None:
+        """A *_test.parquet file must not affect the fingerprint."""
+        import pandas as pd
+
+        self._write_parquet(tmp_path / "AAA_train.parquet")
+        fp_without_test = _compute_data_fingerprint(tmp_path)
+
+        # Adding a _test file must leave fingerprint unchanged
+        pd.DataFrame({"a": [9, 8, 7]}).to_parquet(tmp_path / "AAA_test.parquet")
+        fp_with_test = _compute_data_fingerprint(tmp_path)
+
+        assert fp_without_test == fp_with_test
+
+    def test_empty_dir_returns_empty(self, tmp_path: Path) -> None:
+        """Directory with no *_train.parquet files must return ``'empty'``."""
+        result = _compute_data_fingerprint(tmp_path)
+        assert result == "empty"
+
+    def test_result_is_16_hex_chars(self, tmp_path: Path) -> None:
+        """Fingerprint for non-empty dir must be exactly 16 lowercase hex chars."""
+        self._write_parquet(tmp_path / "AAA_train.parquet")
+        fp = _compute_data_fingerprint(tmp_path)
+
+        assert len(fp) == 16
+        assert all(c in "0123456789abcdef" for c in fp)

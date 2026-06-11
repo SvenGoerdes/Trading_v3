@@ -17,11 +17,77 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 OHLCV_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume"]
+EXCHANGE_TIMEOUT_MS = 30_000
+FETCH_MAX_RETRIES = 5
+FETCH_BACKOFF_BASE_SECONDS = 2.0
 
 
 def create_exchange() -> ccxt.binance:
-    """Create a Binance exchange instance with rate limiting."""
-    return ccxt.binance({"enableRateLimit": True})
+    """Create a spot-only Binance exchange instance with rate limiting and extended timeout.
+
+    Restricted to spot markets so load_markets() never touches the futures
+    endpoints (fapi/dapi), which are unreachable from some networks.
+    """
+    return ccxt.binance(
+        {
+            "enableRateLimit": True,
+            "timeout": EXCHANGE_TIMEOUT_MS,
+            "options": {"defaultType": "spot", "fetchMarkets": ["spot"]},
+        }
+    )
+
+
+def _fetch_with_retry(
+    exchange: ccxt.Exchange,
+    symbol: str,
+    timeframe: str,
+    since_ms: int,
+    limit: int,
+) -> list[list]:
+    """Fetch one page of OHLCV data, retrying on transient network errors.
+
+    Retries up to FETCH_MAX_RETRIES times with exponential backoff on any
+    ccxt.NetworkError (covers RequestTimeout, DDoSProtection,
+    ExchangeNotAvailable).  Non-network ccxt errors propagate immediately.
+
+    Args:
+        exchange: ccxt exchange instance.
+        symbol: Trading pair (e.g. 'BTC/USDT').
+        timeframe: Candle interval string.
+        since_ms: Fetch candles starting from this UNIX timestamp (ms).
+        limit: Maximum number of candles to fetch.
+
+    Returns:
+        List of raw OHLCV rows as returned by ccxt.
+
+    Raises:
+        ccxt.NetworkError: After all retry attempts are exhausted.
+        ccxt.BaseError: Immediately for non-network errors.
+    """
+    for attempt in range(FETCH_MAX_RETRIES):
+        try:
+            return exchange.fetch_ohlcv(symbol, timeframe, since=since_ms, limit=limit)
+        except ccxt.NetworkError as exc:
+            if attempt == FETCH_MAX_RETRIES - 1:
+                logger.error(
+                    "fetch_ohlcv %s failed after %d attempts: %s",
+                    symbol,
+                    FETCH_MAX_RETRIES,
+                    exc,
+                )
+                raise
+            backoff = FETCH_BACKOFF_BASE_SECONDS * (2**attempt)
+            logger.warning(
+                "fetch_ohlcv %s transient error (attempt %d/%d), retrying in %.1fs: %s",
+                symbol,
+                attempt + 1,
+                FETCH_MAX_RETRIES,
+                backoff,
+                exc,
+            )
+            time.sleep(backoff)
+    # Unreachable, but satisfies type checkers.
+    raise RuntimeError("Unexpected exit from retry loop")
 
 
 def timeframe_to_milliseconds(timeframe: str) -> int:
@@ -68,7 +134,7 @@ def fetch_ohlcv_single_symbol(
     limit = 1000
 
     while cursor < until_ms:
-        candles = exchange.fetch_ohlcv(symbol, timeframe, since=cursor, limit=limit)
+        candles = _fetch_with_retry(exchange, symbol, timeframe, cursor, limit)
         if not candles:
             break
 
