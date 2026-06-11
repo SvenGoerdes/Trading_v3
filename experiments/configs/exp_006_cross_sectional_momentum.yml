@@ -78,10 +78,10 @@ td3:
   learning_rate:
     actor: 0.0001
     critic: 0.0003
-  
+
   # Crucial for stable convergence in crypto
   lr_schedule: "linear" # or "cosine"
-  
+
   gamma: 0.99
   tau: 0.005
   batch_size: 512
@@ -92,7 +92,7 @@ td3:
   target_noise_clip: 0.5
   target_policy_noise: 0.2
   action_noise_std: 0.1
-  total_timesteps: 1000000
+  total_timesteps: 200000   # screening budget
   net_arch:
     pi: [256, 128]
     qf: [256, 128]
@@ -104,21 +104,77 @@ environment:
   window_size: 50
   reward_scaling: 1.0
   max_position: 1.0
-  rebalance_threshold: 0.10 # skip trades below this fraction of portfolio value (no-trade band)
-  turnover_penalty_coef: 0.004 # reward penalty per unit turnover (traded value / portfolio value)
+  # Carried over from champion EXP-005 (cost levers, UNCHANGED this experiment).
+  rebalance_threshold: 0.10
+  turnover_penalty_coef: 0.004
+
+  # EXP-006 CHANGE — add a CROSS-SECTIONAL MOMENTUM feature to the observation
+  # (base = champion EXP-005; cost levers frozen). This is the MANDATORY branch flagged
+  # in EXP-003/004/005: cost shaping is now exhausted (cost cut 5163 -> ~960, -81% since
+  # EXP-001), but the agent has had NO directional edge the entire chain — win_rate
+  # 0.40-0.46, profit_factor < 0.7, SMA20-timing ~48-52% (coin-flip), trades spread evenly
+  # across all 10 assets = pure churn. EXP-005's Sharpe gain was regime-conditional
+  # (holding rewarded in the up-market fold_0), not skill.
+  #
+  # ROOT CAUSE (why no edge is structural, not a tuning problem): the observation is
+  # [window TIs | portfolio_weights | cash_ratio]. Every TI is rolling-z-scored WITHIN its
+  # own asset (normalization.method = rolling_zscore). So the agent can see "is BTC's ROC
+  # high vs BTC's own history" but NEVER "is BTC outperforming the other 9 assets RIGHT NOW".
+  # A portfolio allocator's whole job is cross-sectional ranking — and that signal is exactly
+  # what the per-asset z-score removes. With no relative-strength input the agent cannot rank
+  # winners vs losers, so it can only churn or hold uniformly. That is precisely what every
+  # experiment observed.
+  #
+  # Hypothesis: feeding a cross-sectional momentum rank (recent return ranked ACROSS assets
+  # at each step) gives the actor the signal it structurally lacks. Expected effect: trades
+  # concentrate toward relative winners instead of spreading evenly; profit_factor and
+  # win_rate move off the 0.5 coin-flip; the agent finally has a lever to beat the down-market
+  # fold_1 instead of being dragged long with the basket.
+  #
+  # WATCH: (1) obs dimensionality changes (+n_assets per step) -> this experiment is NOT
+  # paired with the cost chain on the same axis; it is a fresh structural baseline for the
+  # observation branch, compared against champion EXP-005 only on the headline metric.
+  # (2) Guard against look-ahead: momentum uses ONLY past closes up to and including the
+  # current decision bar (prices[data_idx], same bar the agent already acts on). (3) If
+  # win_rate / profit_factor do NOT improve, the TIs already carried enough signal and the
+  # bottleneck is the policy/algorithm, not the observation -> next branch is net_arch or SAC.
+  #
+  # CODE REQUIRED (config-gated, defaults OFF so all prior experiments stay reproducible):
+  #   File:   src/environments/trading_env.py
+  #   Config: environment.cross_sectional_momentum (bool) + environment.momentum_window (int)
+  #           wired through src/utils/config.py (EnvironmentConfig dataclass + from_dict, with
+  #           .get(..., False)/.get(..., 12) defaults) and src/pipelines/training/nodes.py
+  #           (_build_env passes both into TradingEnv) + pipeline.py mlflow param logging.
+  #   Constructor: store self.cross_sectional_momentum, self.momentum_window; when enabled,
+  #           bump obs_size by + self.n_assets and assert momentum_window <= window_size.
+  #   Feature (in _get_observation, appended AFTER cash_ratio, only when flag is on):
+  #       data_idx = self.window_size + self.current_step
+  #       idx_now  = min(data_idx, self.n_steps - 1)
+  #       idx_past = max(idx_now - self.momentum_window, 0)
+  #       raw_ret  = self.prices[idx_now] / self.prices[idx_past] - 1.0   # per-asset, past-only
+  #       # cross-sectional standardisation across the 10 assets at this step:
+  #       mom = (raw_ret - raw_ret.mean()) / (raw_ret.std() + 1e-8)       # zero-std -> 0.0 vector
+  #       obs = np.concatenate([window_features, portfolio_weights, [cash_ratio], mom])
+  #   Tests (tests/test_trading_env.py): (a) obs length == old + n_assets when flag on, ==
+  #           unchanged when off; (b) hand-computed mom for a 3-asset toy series (assert with
+  #           pytest.approx); (c) zero-std case (all assets equal return) -> mom all 0.0, finite;
+  #           (d) idx_past never reads beyond idx_now (no look-ahead); (e) _assert_state_valid
+  #           still passes (np.isfinite over the extended obs).
+  cross_sectional_momentum: true
+  momentum_window: 12   # 12 x 5m = 1h relative-strength lookback (<= window_size 50)
 
 # ──────────────────────────────────────────────
 # Training
 # ──────────────────────────────────────────────
 training:
-  seeds: [42, 123, 456, 789, 1024]
+  seeds: [42, 123]
   cv_train_months: 2
   cv_validation_months: 1
   model_dir: "models"
   mlflow_experiment_name: "td3_crypto_trading"
   mlflow_tracking_uri: "mlruns"
   progress_log_every_steps: 10000
-  max_folds: null  # limit CV folds, null = all folds
+  max_folds: 2
 
 # ──────────────────────────────────────────────
 # Backtesting

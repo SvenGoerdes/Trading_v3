@@ -3,7 +3,45 @@
 Journal aller Experimente des autonomen Optimierungs-Loops. Regeln: siehe [PROTOCOL.md](PROTOCOL.md).
 Maschinenlesbare Version: [ledger.jsonl](ledger.jsonl). Modelle: `models/<exp_id>/` (nie überschrieben).
 
-Aktueller Champion: **EXP-004 (mean val Sharpe −2.11)** — Turnover-Penalty 0.002 (auf Band 0.10)
+Aktueller Champion: **EXP-005 (mean val Sharpe −1.12)** — Turnover-Penalty 0.004 (auf Band 0.10)
+
+---
+
+## EXP-005 — 2026-06-11 — Turnover-Penalty höher (turnover_penalty_coef 0.002 → 0.004)
+**Hypothese:** Der Kosten-Hebel klingt ab, ist aber noch nicht erschöpft (Spiegel des
+  Band-Schritts 0.05→0.10). Verdopplung des Coef auf 0.004 senkt Trades/Kosten weiter und
+  hebt Sharpe erneut — SOFERN der Agent die Spar-/Schaden-Schwelle nicht überschreitet.
+**Änderung:** environment.turnover_penalty_coef: 0.002 → 0.004   (Basis: EXP-004)
+**Basis:** Commit 30578b4, data_fingerprint `ec2e07548f555da2` (gepaart mit EXP-001..004)
+**Budget:** 200k Steps × 2 Seeds × 2 Folds
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **−1.12** (std 0.41) | MaxDD **0.36** | CPR 0.87
+  Pro Fold: S42 F0 −0.20 / F1 −1.21 · S123 F0 −0.78 / F1 −2.27
+  **Alle 4 Läufe besser** (gepaart): S42/F0 +0.93, S42/F1 +2.39, S123/F0 +0.55, S123/F1 +0.09
+**Entscheidung:** ⭐ ADOPTIERT → neuer Champion. Delta +0.99 ≫ 0.05-Schwelle, MaxDD besser
+  (0.355 vs 0.361), kein Crash/NaN. Vorläufig bis Confirmation (1M Steps, 5 Seeds).
+**Modelle:** `models/exp_005/`
+**MLflow:** Runs `seed_42` (b9033167), `seed_123` (56730aa2), Experiment `td3_crypto_trading`
+**Freeze-Guard (eigenes Kill-Kriterium aus dem EXP-005-Vorschlag) → FEUERT NICHT:** Bei coef
+  0.004 übersteigt der Penalty auf High-Turnover-Steps das Return-Signal — trotzdem **kein
+  Freeze, kein All-Cash, kein Action-Kollaps.** Trades (fold_1-Snapshot) 413/355 → **297/286**
+  (−28 %/−19 %, kein Asset auf null, Minimum 26 Trades), `actions/std` **0.79 → 0.76/0.71**
+  (nur leicht gesunken), `actions/mean` **0.48 → 0.56/0.62** (Agent hält GRÖSSERE Positionen,
+  geht NICHT in Cash), total_cost 1275/1156 → **988/930** (−22 %/−20 %). critic_loss sauber
+  (5–6e-6). → ADOPT erfüllt, Freeze-Guard bestätigt aktive Politik.
+**Learnings:** Der Gewinn ist **Regime + Kostensenkung, nicht Direktions-Edge.** Zerlegung
+  fold_1 (Brutto vs Kosten): S42 brutto −24.0 % → **−10.4 %** UND Kosten −12.8pp → −9.9pp
+  (beides echt verbessert); S123 brutto −16.7 % → **−18.9 %** (SCHLECHTER), nur Kosten besser
+  → S123/F1 ist kosten-only und sub-Schwelle (+0.09). fold_0 CPR 0.99/0.96 = aktives, mild
+  profitables Halten im Up-Markt (KEINE Inaktivität — siehe Trades/std). win_rate 0.40–0.46,
+  profit_factor 0.49–0.61, SMA20-Timing 48–57 % = weiterhin **Münzwurf**. **Kosten-Hebel
+  ERSCHÖPFT:** total_cost 5163 (EXP-001) → ~960 (EXP-005), **−81 %**; Spar-/Schaden an der
+  Schwelle (S123/F1 schon kosten-only). **Verzweigung jetzt zwingend → Signal/Observation:**
+  Wurzelursache des fehlenden Edge ist strukturell — alle TIs sind PRO ASSET rolling-z-skaliert,
+  der Agent sieht nie die QUERSCHNITTLICHE relative Stärke (Asset X vs die anderen 9). EXP-006:
+  Cross-Sectional-Momentum-Feature in die Observation (strukturell/Code, defaults OFF). Anmerkung:
+  `perf/*`-Metriken werden ohne `step=` geloggt → Endwert = letzter Fold (fold_1); fold_0-Kosten/
+  Brutto nicht direkt beobachtbar (kleiner Logging-Zusatz wäre nützlich, nicht blockierend).
 
 ---
 
