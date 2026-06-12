@@ -681,3 +681,96 @@ class TestTurnoverPenalty:
 
         assert info["turnover"] == pytest.approx(0.0)
         assert info["total_traded_value"] == pytest.approx(0.0)
+
+
+class TestAllocationMode:
+    """Tests for the config-gated allocation_mode parameter in TradingEnv."""
+
+    def _make_scaled_env(self, n_assets: int = 2) -> TradingEnv:
+        """Create a TradingEnv with allocation_mode='scaled'."""
+        data, symbols = _make_env_data(n_steps=200, n_assets=n_assets)
+        return TradingEnv(
+            data=data,
+            symbols=symbols,
+            initial_balance=10000.0,
+            trading_fee_pct=0.001,
+            slippage_pct=0.0005,
+            window_size=10,
+            reward_scaling=1.0,
+            max_position=1.0,
+            allocation_mode="scaled",
+        )
+
+    def test_scaled_mid_action_holds_cash(self) -> None:
+        """With allocation_mode='scaled', a mid-range action leaves cash in the portfolio.
+
+        A mid-range action (all 0.0 => mapped weights 0.5 each, 2 assets) gives:
+          scaled_weight = 0.5 / (2 * 1.0) = 0.25 each => invested_fraction = 0.5
+        So at least 50% of portfolio should remain as cash after the step.
+        """
+        env = self._make_scaled_env(n_assets=2)
+        env.reset()
+        # Action 0.0 maps to weight = (0.0 + 1.0) / 2 = 0.5 for each asset
+        action = np.zeros(2, dtype=np.float32)
+        _, _, _, _, info = env.step(action)
+
+        assert info["cash_ratio"] > 0.0, (
+            f"Expected positive cash_ratio with scaled mode, got {info['cash_ratio']}"
+        )
+        assert info["balance"] > 0.0
+
+    def test_scaled_all_negative_action_stays_cash(self) -> None:
+        """All-minus-one action (weight=0) => no investment => cash_ratio near 1."""
+        env = self._make_scaled_env(n_assets=2)
+        env.reset()
+        action = np.full(2, -1.0, dtype=np.float32)
+        _, _, _, _, info = env.step(action)
+
+        assert info["total_cost"] == pytest.approx(0.0)
+        assert info["cash_ratio"] == pytest.approx(1.0, abs=0.01)
+
+    def test_default_env_info_contains_cash_ratio(self) -> None:
+        """Default (renormalize) env also emits cash_ratio in the info dict."""
+        env = _make_env()
+        env.reset()
+        action = np.array([0.5, 0.5], dtype=np.float32)
+        _, _, _, _, info = env.step(action)
+
+        assert "cash_ratio" in info
+        assert np.isfinite(info["cash_ratio"])
+
+    def test_default_env_allocation_mode_is_renormalize(self) -> None:
+        """TradingEnv default allocation_mode must be 'renormalize'."""
+        env = _make_env()
+        assert env.allocation_mode == "renormalize"
+
+    def test_scaled_env_stores_allocation_mode(self) -> None:
+        """allocation_mode='scaled' is stored on the env instance."""
+        env = self._make_scaled_env()
+        assert env.allocation_mode == "scaled"
+
+    def test_renormalize_forces_full_investment_for_large_actions(self) -> None:
+        """With renormalize, high actions force near-100% investment.
+
+        Action all-1.0 => weights [1.0, 1.0], sum=2.0 > 1.0 => renorm => [0.5, 0.5].
+        Almost all cash is invested; cash_ratio should be very small.
+        """
+        data, symbols = _make_env_data(n_steps=200, n_assets=2)
+        env = TradingEnv(
+            data=data,
+            symbols=symbols,
+            initial_balance=10000.0,
+            trading_fee_pct=0.001,
+            slippage_pct=0.0005,
+            window_size=10,
+            reward_scaling=1.0,
+            max_position=1.0,
+            allocation_mode="renormalize",
+        )
+        env.reset()
+        action = np.ones(2, dtype=np.float32)
+        _, _, _, _, info = env.step(action)
+
+        # After buying at renormalized 50/50, almost all portfolio is invested
+        # cash_ratio should be very close to 0
+        assert info["cash_ratio"] < 0.05

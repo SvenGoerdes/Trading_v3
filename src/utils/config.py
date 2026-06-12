@@ -110,6 +110,7 @@ class EnvironmentConfig:
     turnover_penalty_coef: float
     cross_sectional_momentum: bool
     momentum_window: int
+    allocation_mode: str
 
 
 @dataclass(frozen=True)
@@ -230,6 +231,7 @@ def parse_config(raw: dict) -> AppConfig:
             turnover_penalty_coef=raw["environment"].get("turnover_penalty_coef", 0.0),
             cross_sectional_momentum=raw["environment"].get("cross_sectional_momentum", False),
             momentum_window=raw["environment"].get("momentum_window", 12),
+            allocation_mode=raw["environment"].get("allocation_mode", "renormalize"),
         ),
         training=TrainingConfig(
             seeds=raw["training"]["seeds"],

@@ -258,6 +258,7 @@ def _flatten_config_params(config) -> dict[str, str]:
         "turnover_penalty_coef": str(config.environment.turnover_penalty_coef),
         "cross_sectional_momentum": str(config.environment.cross_sectional_momentum),
         "momentum_window": str(config.environment.momentum_window),
+        "allocation_mode": config.environment.allocation_mode,
         # Portfolio
         "initial_balance": str(config.initial_balance),
         "trading_fee_pct": str(config.trading_fee_pct),

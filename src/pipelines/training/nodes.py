@@ -295,6 +295,7 @@ def create_trading_env(
         turnover_penalty_coef=env_config.turnover_penalty_coef,
         cross_sectional_momentum=env_config.cross_sectional_momentum,
         momentum_window=env_config.momentum_window,
+        allocation_mode=env_config.allocation_mode,
     )
 
 

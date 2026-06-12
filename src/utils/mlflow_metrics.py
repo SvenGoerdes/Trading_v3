@@ -141,6 +141,10 @@ class TradingMetricsLogger:
         pv = np.array(eval_result["portfolio_values"], dtype=np.float64)
         rewards = np.array(eval_result["rewards"], dtype=np.float64)
         trade_pnls = np.array(eval_result["trade_pnls"], dtype=np.float64)
+        cash_ratios = np.array(eval_result.get("cash_ratios", []), dtype=np.float64)
+
+        cash_ratio_mean = float(np.mean(cash_ratios)) if len(cash_ratios) > 0 else 0.0
+        cash_ratio_min = float(np.min(cash_ratios)) if len(cash_ratios) > 0 else 0.0
 
         metrics = {
             "perf/sharpe_ratio": compute_sharpe_ratio(pv),
@@ -156,6 +160,8 @@ class TradingMetricsLogger:
             "perf/total_cost": float(eval_result.get("total_costs", 0.0)),
             "perf/reward_skewness": compute_reward_skewness(rewards),
             "perf/reward_kurtosis": compute_reward_kurtosis(rewards),
+            "perf/cash_ratio_mean": cash_ratio_mean,
+            "perf/cash_ratio_min": cash_ratio_min,
         }
 
         for key, value in metrics.items():

@@ -137,6 +137,7 @@ def run_full_evaluation(
     prices_list: list[NDArray[np.float64]] = [
         test_env.prices[test_env.window_size].copy()
     ]
+    cash_ratios: list[float] = []
     total_costs = 0.0
 
     terminated = False
@@ -152,6 +153,7 @@ def run_full_evaluation(
         actions_list.append(info["action"].copy())
         holdings_list.append(info["holdings"].copy())
         total_costs += info["total_cost"]
+        cash_ratios.append(float(info.get("cash_ratio", 0.0)))
 
         # Get current prices for trade derivation
         data_idx = test_env.window_size + test_env.current_step
@@ -180,6 +182,7 @@ def run_full_evaluation(
         "total_costs": total_costs,
         "per_asset_pnls": per_asset_pnls,
         "per_asset_trades": per_asset_trades,
+        "cash_ratios": cash_ratios,
     }
 
     # Layer 2: Trading performance

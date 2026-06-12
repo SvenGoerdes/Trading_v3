@@ -108,6 +108,7 @@ environment:
   turnover_penalty_coef: 0.0  # reward penalty per unit turnover (traded value / portfolio value)
   cross_sectional_momentum: false  # append n_assets cross-sectional momentum values to observation
   momentum_window: 12  # lookback bars for cross-sectional momentum (must be <= window_size)
+  allocation_mode: "renormalize"  # "renormalize" = force ~full investment; "scaled" = fixed divisor, remainder stays cash
 
 # ──────────────────────────────────────────────
 # Training

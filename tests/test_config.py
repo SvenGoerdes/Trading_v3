@@ -580,3 +580,36 @@ class TestComputeDataFingerprint:
 
         assert len(fp) == 16
         assert all(c in "0123456789abcdef" for c in fp)
+
+
+class TestAllocationModeConfig:
+    """Tests for allocation_mode field in EnvironmentConfig."""
+
+    def test_default_renormalize_when_absent(self, valid_yaml: Path) -> None:
+        """allocation_mode defaults to 'renormalize' when not present in YAML."""
+        raw = load_yaml(valid_yaml)
+        assert "allocation_mode" not in raw["environment"]
+        config = parse_config(raw)
+        assert config.environment.allocation_mode == "renormalize"
+
+    def test_parsed_when_present_renormalize(self, valid_yaml: Path) -> None:
+        """allocation_mode='renormalize' is correctly parsed when present."""
+        raw = load_yaml(valid_yaml)
+        raw["environment"]["allocation_mode"] = "renormalize"
+        config = parse_config(raw)
+        assert config.environment.allocation_mode == "renormalize"
+
+    def test_parsed_when_present_scaled(self, valid_yaml: Path) -> None:
+        """allocation_mode='scaled' is correctly parsed when present."""
+        raw = load_yaml(valid_yaml)
+        raw["environment"]["allocation_mode"] = "scaled"
+        config = parse_config(raw)
+        assert config.environment.allocation_mode == "scaled"
+
+    def test_immutable(self, valid_yaml: Path) -> None:
+        """allocation_mode field must be immutable (frozen dataclass)."""
+        from dataclasses import FrozenInstanceError
+
+        config = parse_config(load_yaml(valid_yaml))
+        with pytest.raises(FrozenInstanceError):
+            config.environment.allocation_mode = "scaled"  # type: ignore[misc]

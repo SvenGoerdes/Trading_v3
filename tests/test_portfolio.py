@@ -345,6 +345,125 @@ class TestRebalanceThreshold:
         assert cost == pytest.approx(0.0)
 
 
+class TestScaledAllocation:
+    """Tests for allocation_mode='scaled' in compute_target_holdings.
+
+    All expected values are hand-computed. The scaled formula divides each
+    clipped weight by ``n_assets * max_position``, so the invested fraction
+    equals ``sum(clipped) / (n_assets * max_position)`` and is always in [0, 1].
+    """
+
+    def test_uniform_weights_10_assets(self) -> None:
+        """10 assets, all raw weights 0.92, max_position 1.0, portfolio 10000, prices all 100.
+
+        Hand-computation:
+          clipped = clip([0.92]*10, 0.0, 1.0) = [0.92]*10
+          divisor = 10 * 1.0 = 10
+          scaled_weights = [0.92/10]*10 = [0.092]*10
+          invested_fraction = 10 * 0.092 = 0.92  (i.e. 92%)
+          target_values = [0.092 * 10000]*10 = [920.0]*10
+          target_shares = [920.0 / 100]*10 = [9.2]*10
+        """
+        weights = np.full(10, 0.92)
+        portfolio_value = 10000.0
+        prices = np.full(10, 100.0)
+        max_position = 1.0
+
+        result = compute_target_holdings(
+            weights, portfolio_value, prices, max_position, allocation_mode="scaled"
+        )
+
+        assert len(result) == 10
+        for i in range(10):
+            assert result[i] == pytest.approx(9.2), f"Asset {i}: expected 9.2, got {result[i]}"
+
+    def test_all_zero_weights_full_cash(self) -> None:
+        """All weights 0.0 => all target holdings 0 (100% cash).
+
+        Hand-computation:
+          clipped = [0.0]*10
+          scaled_weights = [0.0/10]*10 = [0.0]*10
+          target_shares = [0.0]*10
+        """
+        weights = np.zeros(10)
+        portfolio_value = 10000.0
+        prices = np.full(10, 100.0)
+        max_position = 1.0
+
+        result = compute_target_holdings(
+            weights, portfolio_value, prices, max_position, allocation_mode="scaled"
+        )
+
+        np.testing.assert_array_equal(result, 0.0)
+
+    def test_two_assets_partial_cash(self) -> None:
+        """2 assets [1.0, 0.5], max_position 1.0 => 75% invested, 25% cash.
+
+        Hand-computation:
+          clipped = [1.0, 0.5]
+          divisor = 2 * 1.0 = 2
+          scaled_weights = [1.0/2, 0.5/2] = [0.5, 0.25]
+          invested_fraction = 0.5 + 0.25 = 0.75
+          target_values = [0.5*10000, 0.25*10000] = [5000.0, 2500.0]
+          prices = [100.0, 50.0]
+          target_shares = [5000/100, 2500/50] = [50.0, 50.0]
+        """
+        weights = np.array([1.0, 0.5])
+        portfolio_value = 10000.0
+        prices = np.array([100.0, 50.0])
+        max_position = 1.0
+
+        result = compute_target_holdings(
+            weights, portfolio_value, prices, max_position, allocation_mode="scaled"
+        )
+
+        assert result[0] == pytest.approx(50.0)
+        assert result[1] == pytest.approx(50.0)
+
+    def test_renormalize_regression_same_inputs(self) -> None:
+        """Default renormalize on inputs [1.0, 0.5] gives the OLD result.
+
+        Hand-computation for renormalize:
+          clipped = [1.0, 0.5]
+          total = 1.5 > 1.0 => renorm to [1/1.5, 0.5/1.5] = [2/3, 1/3]
+          target_values = [2/3 * 10000, 1/3 * 10000] = [6666.67, 3333.33]
+          prices = [100.0, 50.0]
+          target_shares = [6666.67/100, 3333.33/50] = [66.67, 66.67]
+        """
+        weights = np.array([1.0, 0.5])
+        portfolio_value = 10000.0
+        prices = np.array([100.0, 50.0])
+        max_position = 1.0
+
+        # Default (no allocation_mode arg) must behave exactly like renormalize
+        result_default = compute_target_holdings(weights, portfolio_value, prices, max_position)
+        result_renorm = compute_target_holdings(
+            weights, portfolio_value, prices, max_position, allocation_mode="renormalize"
+        )
+
+        # Both must produce the same (renormalized) result
+        np.testing.assert_array_equal(result_default, result_renorm)
+
+        # Hand-computed renormalize values
+        assert result_renorm[0] == pytest.approx(10000.0 * (1.0 / 1.5) / 100.0)
+        assert result_renorm[1] == pytest.approx(10000.0 * (0.5 / 1.5) / 50.0)
+
+        # Renormalize result must differ from scaled result
+        result_scaled = compute_target_holdings(
+            weights, portfolio_value, prices, max_position, allocation_mode="scaled"
+        )
+        assert not np.allclose(result_renorm, result_scaled)
+
+    def test_invalid_mode_raises_value_error(self) -> None:
+        """Any unrecognised allocation_mode must raise ValueError immediately."""
+        weights = np.array([0.5, 0.5])
+        with pytest.raises(ValueError, match="Unknown allocation_mode"):
+            compute_target_holdings(
+                weights, 10000.0, np.array([100.0, 100.0]), 1.0,
+                allocation_mode="magic"
+            )
+
+
 class TestTotalTradedValue:
     """Tests for the total_traded_value component of execute_rebalance.
 

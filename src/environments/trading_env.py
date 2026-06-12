@@ -56,6 +56,9 @@ class TradingEnv(gym.Env):
             reproduces prior observation layout bit-for-bit.
         momentum_window: Lookback bars for the momentum return window.  Must be
             <= window_size.  Default 12.
+        allocation_mode: Passed through to ``compute_target_holdings``.
+            ``"renormalize"`` (default) reproduces existing behaviour bit-for-bit.
+            ``"scaled"`` allows the agent to hold cash.
     """
 
     metadata = {"render_modes": []}
@@ -74,6 +77,7 @@ class TradingEnv(gym.Env):
         turnover_penalty_coef: float = 0.0,
         cross_sectional_momentum: bool = False,
         momentum_window: int = 12,
+        allocation_mode: str = "renormalize",
     ) -> None:
         super().__init__()
         self.symbols = symbols
@@ -88,6 +92,7 @@ class TradingEnv(gym.Env):
         self.turnover_penalty_coef = turnover_penalty_coef
         self.cross_sectional_momentum = cross_sectional_momentum
         self.momentum_window = momentum_window
+        self.allocation_mode = allocation_mode
 
         self._build_data_arrays(data)
 
@@ -199,7 +204,11 @@ class TradingEnv(gym.Env):
         )
 
         target_shares = compute_target_holdings(
-            target_weights, old_portfolio_value, current_prices, self.max_position
+            target_weights,
+            old_portfolio_value,
+            current_prices,
+            self.max_position,
+            allocation_mode=self.allocation_mode,
         )
 
         self.balance, self.holdings, total_cost, total_traded_value = execute_rebalance(
@@ -251,6 +260,8 @@ class TradingEnv(gym.Env):
         obs = self._get_observation()
         self._assert_state_valid(obs)
 
+        cash_ratio = self.balance / new_portfolio_value if new_portfolio_value > 0 else 0.0
+
         info = {
             "portfolio_value": new_portfolio_value,
             "balance": self.balance,
@@ -259,6 +270,7 @@ class TradingEnv(gym.Env):
             "turnover": turnover,
             "holdings": self.holdings.copy(),
             "action": target_weights.copy(),
+            "cash_ratio": cash_ratio,
         }
 
         return obs, reward, terminated, truncated, info

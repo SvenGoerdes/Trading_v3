@@ -57,6 +57,7 @@ def compute_target_holdings(
     portfolio_value: float,
     prices: NDArray[np.float64],
     max_position: float,
+    allocation_mode: str = "renormalize",
 ) -> NDArray[np.float64]:
     """Convert target weight vector to target share counts.
 
@@ -65,14 +66,34 @@ def compute_target_holdings(
         portfolio_value: Current total portfolio value.
         prices: Current prices per asset.
         max_position: Maximum weight allowed per asset.
+        allocation_mode: How to handle the clipped weight vector.
+            ``"renormalize"`` divides by sum when sum > 1.0, forcing ~100%
+            investment (existing behaviour, bit-for-bit identical).
+            ``"scaled"`` divides by ``n_assets * max_position`` — a fixed
+            divisor — so the agent can hold cash by lowering its actions.
+            Any other value raises ``ValueError``.
 
     Returns:
         Target number of shares per asset.
+
+    Raises:
+        ValueError: If ``allocation_mode`` is not a recognised value.
     """
     clipped_weights = np.clip(target_weights, 0.0, max_position)
-    total_weight = float(np.sum(clipped_weights))
-    if total_weight > 1.0:
-        clipped_weights = clipped_weights / total_weight
+
+    if allocation_mode == "renormalize":
+        total_weight = float(np.sum(clipped_weights))
+        if total_weight > 1.0:
+            clipped_weights = clipped_weights / total_weight
+    elif allocation_mode == "scaled":
+        n_assets = len(clipped_weights)
+        divisor = n_assets * max_position
+        clipped_weights = clipped_weights / divisor
+    else:
+        raise ValueError(
+            f"Unknown allocation_mode {allocation_mode!r}. "
+            "Expected 'renormalize' or 'scaled'."
+        )
 
     target_values = clipped_weights * portfolio_value
     target_shares = target_values / prices
