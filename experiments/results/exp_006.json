@@ -1,0 +1,48 @@
+{
+  "experiment_id": "exp_006",
+  "timestamp": "2026-06-12T01:12:02+00:00",
+  "git_commit": "18882e0",
+  "config_path": "experiments/configs/exp_006_cross_sectional_momentum.yml",
+  "data_fingerprint": "ec2e07548f555da2",
+  "model_dir": "models/exp_006",
+  "models": {
+    "42": "models/exp_006/td3_seed42_best.zip",
+    "123": "models/exp_006/td3_seed123_best.zip"
+  },
+  "n_seeds": 2,
+  "n_folds": 2,
+  "aggregate": {
+    "mean_mean_sharpe_ratio": -1.3325870978009733,
+    "std_mean_sharpe_ratio": 0.526857218002909,
+    "mean_mean_cpr": 0.8464147851078938,
+    "std_mean_cpr": 0.05511972595958192,
+    "mean_mean_max_drawdown": 0.3598127392647994,
+    "std_mean_max_drawdown": 0.03514440168476274
+  },
+  "per_seed": {
+    "42": [
+      {
+        "sharpe_ratio": -1.5092623638259113,
+        "cpr": 0.9245220455273653,
+        "max_drawdown": 0.21478157522733
+      },
+      {
+        "sharpe_ratio": -2.2096262677818532,
+        "cpr": 0.6580680727692584,
+        "max_drawdown": 0.5751327066717943
+      }
+    ],
+    "123": [
+      {
+        "sharpe_ratio": -0.15715180268018536,
+        "cpr": 0.9919868575767621,
+        "max_drawdown": 0.1503833107686061
+      },
+      {
+        "sharpe_ratio": -1.4543079569159434,
+        "cpr": 0.8110821645581893,
+        "max_drawdown": 0.4989533643914672
+      }
+    ]
+  }
+}

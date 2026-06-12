@@ -7,6 +7,48 @@ Aktueller Champion: **EXP-005 (mean val Sharpe −1.12)** — Turnover-Penalty 0
 
 ---
 
+## EXP-006 — 2026-06-12 — Cross-Sectional-Momentum-Feature (Observation, momentum_window 12)
+**Hypothese:** Alle TIs sind PRO ASSET rolling-z-skaliert → der Agent sieht nie die
+  QUERSCHNITTLICHE relative Stärke (Asset X vs die anderen 9). Ein quer über die 10 Assets
+  z-skaliertes 12-Bar-Momentum (1h, nur Vergangenheit) gibt dem Actor genau dieses fehlende
+  Ranking-Signal. Erwartung: Trades konzentrieren sich auf relative Gewinner statt gleichmäßig
+  zu streuen; win_rate/profit_factor lösen sich vom 0.5-Münzwurf.
+**Änderung:** environment.cross_sectional_momentum: false → true (momentum_window 12)   (Basis: EXP-005)
+**Basis:** Commit 18882e0, data_fingerprint `ec2e07548f555da2` (Daten gepaart mit EXP-001..005;
+  ACHTUNG: Obs-Dimensionalität +n_assets → auf der Observation-Achse NICHT mit der Kosten-Kette
+  gepaart, frischer Struktur-Baseline für den Signal-Branch, Vergleich nur auf Headline-Metrik).
+**Budget:** 200k Steps × 2 Seeds × 2 Folds
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **−1.33** (std 0.53) | MaxDD **0.36** | CPR 0.85
+  Pro Fold: S42 F0 −1.51 / F1 −2.21 · S123 F0 −0.16 / F1 −1.45
+  Gepaart (indikativ, da Obs-Dim geändert): 2:2 (S123 beide besser, S42 beide schlechter)
+**Entscheidung:** ❌ ABGELEHNT — Delta −0.21 < +0.05-Schwelle, MaxDD unverändert (0.360 vs 0.355),
+  kein Crash/NaN. Champion bleibt EXP-005. **NICHT als vielversprechend markiert** (Begründung unten).
+**Modelle:** `models/exp_006/`
+**MLflow:** Runs `seed_42` (d703684a), `seed_123` (29ef5f50), Experiment `td3_crypto_trading`
+**Learnings:** Das Feature wirkt NICHT wie hypothetisiert. **Kern-Befund: Trade-Konzentration
+  unverändert** — per-asset Trade-HHI 0.109/0.112 vs EXP-005 0.105/0.110 (1/10 = 0.10 = uniform);
+  der Agent streut Trades weiter gleichmäßig über alle 10 Assets = derselbe Churn wie die ganze
+  Kette. Kein Winner-Konzentrations-Effekt. Signal-Metriken nur im Rauschen: win_rate 0.47/0.43
+  (EXP-005 0.40/0.46), profit_factor 0.59/0.62 (0.49/0.61), SMA20-Timing 50–54 % (Münzwurf).
+  total_cost weiter gesunken (988/930 → 831/802) und n_trades (297/286 → 257/247), aber das ist
+  Konvergenz-Drift, kein Edge. **Decisive Diagnose = UNTERTRAINING, nicht fehlendes Signal:** über
+  die letzten 40k Steps BEIDER Seeds wandert der Actor noch — actions/mean steigt (s42 0.57→0.64,
+  s123 0.58→0.65), actions/std fällt (0.74→0.69), reward_mean kriecht weiter Richtung 0. Die
+  Politik ist beim 200k-Cutoff NICHT konvergiert. critic_loss sauber (2–5e-6) → kein Instabilitäts-/
+  LR-Problem, schlicht zu wenig Optimierungszeit. Dazu Seed-Varianz explodiert (std 0.53 vs 0.41;
+  S42/F0 −1.51 vs S123/F0 −0.16) = unterkonvergierte Actors landen pro Seed in anderen Basins.
+  **Zwei offene Hypothesen für die Ablehnung:** (A) Kette ist bei 200k untertrainiert, (B) Signal
+  nutzlos / Bottleneck ist Policy/Algorithmus. Lassen sich nicht in einem Experiment trennen
+  („Momentum + längeres Training" = zwei Änderungen). **Verzweigung → EXP-007:** isoliert Variable
+  (A) AUF DER CHAMPION-Observation (Momentum aus): total_timesteps 200k → 400k. Hilft 400k dem
+  Champion → Kette war untertrainiert → EXP-008 = Momentum AN + 400k (Signal-Branch mit adäquatem
+  Budget erneut testen). Hilft 400k NICHT → 200k reichte, EXP-006-Ablehnung ist echt, Bottleneck
+  ist Repräsentation/Algorithmus (net_arch oder SAC), nicht Zeit. Anmerkung: `perf/*`-Metriken
+  weiter ohne `step=` geloggt → Endwert = fold_1-Snapshot (fold_0-Signal nicht direkt beobachtbar).
+
+---
+
 ## EXP-005 — 2026-06-11 — Turnover-Penalty höher (turnover_penalty_coef 0.002 → 0.004)
 **Hypothese:** Der Kosten-Hebel klingt ab, ist aber noch nicht erschöpft (Spiegel des
   Band-Schritts 0.05→0.10). Verdopplung des Coef auf 0.004 senkt Trades/Kosten weiter und
