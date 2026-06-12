@@ -7,6 +7,54 @@ Aktueller Champion: **EXP-007 (mean val Sharpe −0.85)** — wie EXP-005, train
 
 ---
 
+## EXP-010 — 2026-06-12 — Cross-Sectional-Momentum AN, Trend-Horizont (momentum_window 12 → 48, ~4h)
+**Hypothese:** EXP-009 zeigte: der Turnover-Penalty war NICHT bindend, die edge-lose Reward-
+  Landschaft ist es — bei fehlendem Direktions-Edge plus Kosten IST Cash-Halten optimal. Eskalation
+  in den Signal/Observation-Branch (pre-registriert): Cross-Sectional-Momentum AN, aber auf
+  TREND-Horizont (`momentum_window 48` = ~4h statt 1h-Microstructure-Noise von EXP-006), auf der
+  `scaled`-Basis wo Cash eine echte Option ist. Erwartung: der Actor lenkt Kapital SELEKTIV auf
+  Cross-Sectional-Gewinner (cash_ratio < 0.85, Trade-HHI ≫ 0.10), positive Sharpe über BEIDE Seeds.
+**Änderung:** environment.cross_sectional_momentum: false → true (momentum_window 48)   (Basis: EXP-009 `scaled`)
+**Basis:** Commit 653f84b, data_fingerprint `ec2e07548f555da2` (STRUKTURELL/Code, frischer Baseline
+  auf der Observation-Achse, Obs-Dim +n_assets — NICHT mit EXP-001..007 auf der Execution-Achse und
+  NICHT mit EXP-009 auf der Observation-Achse gepaart. Caveats: Budget 200k vs Champion-Headline 400k
+  (EXP-007), `scaled`-Execution → Headline-Vergleich nur indikativ).
+**Budget:** 200k Steps × 2 Seeds × 2 Folds
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **+2.92** (std 1.47) | MaxDD **0.027** | CPR 1.010
+  Pro Fold: S42 F0 **+6.34** (CPR 1.021, MaxDD 0.008) / F1 +2.45 (CPR 1.012, MaxDD 0.016)
+            S123 F0 +5.58 (CPR 1.039, MaxDD 0.015) / F1 **−2.67** (CPR 0.969, MaxDD 0.069)
+  3 von 4 Folds profitabel; fold_0 endlich seed-KONSISTENT (+6.34/+5.58), fold_1-Instabilität bleibt
+  (S42 +2.45 vs S123 −2.67 — gleiches Muster wie EXP-009).
+**Entscheidung:** ❌ ABGELEHNT — **Kill-Kriterium (a) NO-LIFT (vorab registriert) FEUERT.** Der Trend-
+  Horizont-Signal hob den Agenten NICHT vom Near-Cash-Floor: `perf/cash_ratio_mean` **0.904 / 0.887**
+  (beide > 0.85), `perf/n_trades` **13 / 12** (einstellig-zweistellig wie EXP-009 12/9), **per-asset
+  Trade-HHI 0.112 / 0.117** (uniform 1/10 = 0.100 → KEINE Winner-Konzentration), total_cost 39/38 vs
+  Champion-Kette ~960. `actions/mean` oszilliert in [−0.05, +0.06] über alle 200k Steps in BEIDEN Seeds
+  (identischer konvergierter Near-Cash-Attraktor wie EXP-008/009), critic_loss → 0 ab ~105k = konvergiert,
+  NICHT untertrainiert. Der +2.92 ist erneut ein Geldmarktfonds-Artefakt: profit_factor 18.9/26.6 und
+  win_rate 0.83/0.85 auf nur 12–13 Trades; der S123/F1 −2.67 ist EIN adverser Move (reward_skew −40.05,
+  kurtosis 2884) auf einer winzigen, undiversifizierten Position — gleiches Single-Adverse-Move-Muster
+  wie EXP-009 (−3.46). DIREKTVERGLEICH zu EXP-006 (Momentum @ window 12, renormalize-Basis): HHI dort
+  0.109 / 0.112 — DIESELBE uniforme Streuung. Über BEIDE Momentum-Varianten (12-bar/renorm UND
+  48-bar/scaled) null Winner-Konzentration. Feature ist korrekt verdrahtet (Params geloggt csm=True
+  window=48, Obs-Vektor wird erweitert; der Actor nutzt es schlicht nicht) → **die OBSERVATION ist
+  nicht der Bottleneck. Champion bleibt EXP-007. `scaled` + Momentum-AN als Basis behalten.**
+**Modelle:** `models/exp_010/`
+**MLflow:** Runs `seed_42` (89ff90d1), `seed_123` (d956c53c), Experiment `td3_crypto_trading`
+**Learnings:** **Cross-Sectional-Momentum erzeugt auf KEINEM Horizont (1h/renorm, 4h/scaled)
+  Winner-Konzentration** — die Trade-Verteilung bleibt uniform (HHI ~0.11), der Direktions-Edge bleibt
+  Münzwurf. Damit ist die Observation/Signal-Achse für dieses Feature erschöpft: das Problem ist nicht,
+  dass der Agent das Ranking nicht SIEHT, sondern dass er keinen GRUND hat, ihm zu folgen (Signal
+  nicht prädiktiv ODER Policy kann es nicht ausdrücken). **Verzweigung → EXP-011 (pre-registriert in der
+  EXP-010-Kill-(a)): Policy/Algorithmus-Branch, cheapest-first.** net_arch [256,128] → [400,300] (reine
+  Config, kein Code; sauber mit EXP-010 gepaart) testet, ob die Near-Cash-Kollaps ein Kapazitäts-
+  Bottleneck ist. Feuert auch dort Kill (a) → Algorithmus-Swap SAC (Code nötig: `create_sac_agent` +
+  `CustomSAC`-Subklasse) ODER formaler Schluss, dass dieses 10-Asset-5m-Universum mit diesen Features
+  keinen handelbaren Edge trägt. Anmerkung: `perf/*` weiter ohne `step=` → Endwert = fold_1-Snapshot.
+
+---
+
 ## EXP-009 — 2026-06-12 — Turnover-Penalty gesenkt (turnover_penalty_coef 0.004 → 0.001)
 **Hypothese:** EXP-008 zeigte: unter `scaled` geht der edge-lose Agent in ~all-cash, weil der
   aggressiv getunte Turnover-Penalty (optimiert als Cash noch UNMÖGLICH war) jetzt die Inaktivität

@@ -1,0 +1,48 @@
+{
+  "experiment_id": "exp_010",
+  "timestamp": "2026-06-12T16:37:40+00:00",
+  "git_commit": "653f84b",
+  "config_path": "experiments/configs/exp_010_longer_momentum_window.yml",
+  "data_fingerprint": "ec2e07548f555da2",
+  "model_dir": "models/exp_010",
+  "models": {
+    "42": "models/exp_010/td3_seed42_best.zip",
+    "123": "models/exp_010/td3_seed123_best.zip"
+  },
+  "n_seeds": 2,
+  "n_folds": 2,
+  "aggregate": {
+    "mean_mean_sharpe_ratio": 2.9244061661733425,
+    "std_mean_sharpe_ratio": 1.4697018294780917,
+    "mean_mean_cpr": 1.0103101867155715,
+    "std_mean_cpr": 0.006417033426621477,
+    "mean_mean_max_drawdown": 0.02678448789360702,
+    "std_mean_max_drawdown": 0.014863092884893904
+  },
+  "per_seed": {
+    "42": [
+      {
+        "sharpe_ratio": 6.3357988863652865,
+        "cpr": 1.0212447126870448,
+        "max_drawdown": 0.00756065178441364
+      },
+      {
+        "sharpe_ratio": 2.4524171049375814,
+        "cpr": 1.0122097275973407,
+        "max_drawdown": 0.016282138233012593
+      }
+    ],
+    "123": [
+      {
+        "sharpe_ratio": 5.583872475609729,
+        "cpr": 1.038638514600106,
+        "max_drawdown": 0.01463819366770455
+      },
+      {
+        "sharpe_ratio": -2.6744638022192277,
+        "cpr": 0.9691477919777937,
+        "max_drawdown": 0.0686569678892973
+      }
+    ]
+  }
+}
