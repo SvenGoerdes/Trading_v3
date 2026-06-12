@@ -1,0 +1,189 @@
+# ──────────────────────────────────────────────
+# Trading Universe
+# ──────────────────────────────────────────────
+symbols:
+  - BTC/USDT
+  - ETH/USDT
+  - SOL/USDT
+  - AVAX/USDT
+  - LINK/USDT
+  - POL/USDT
+  - UNI/USDT
+  - AAVE/USDT
+  - LTC/USDT
+  - NEAR/USDT
+
+timeframe: "5m"
+
+# ──────────────────────────────────────────────
+# Portfolio
+# ──────────────────────────────────────────────
+initial_balance: 10000.0
+trading_fee_pct: 0.001       # 0.1% taker fee
+slippage_pct: 0.0005         # 0.05% slippage estimate
+
+# ──────────────────────────────────────────────
+# Data Engineering
+# ──────────────────────────────────────────────
+data:
+  lookback_days: 365
+  missing_candle_policy:
+    ffill_limit: 3
+    stale_flag_limit: 20
+    segment_split_beyond: 20
+  paths:
+    raw: "data/01_raw"
+    intermediate: "data/02_intermediate"
+    features: "data/03_features"
+    normalized: "data/04_normalized"
+    splits: "data/05_splits"
+
+# ──────────────────────────────────────────────
+# Technical Indicators
+# ──────────────────────────────────────────────
+indicators:
+  rsi_window: 14
+  sma_window: 20
+  ema_window: 20
+  stochastic_window: 14
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  roc_window: 10
+  williams_r_window: 14
+  disparity_sma_window: 20
+  ad: true
+  obv: true
+
+# ──────────────────────────────────────────────
+# Normalization
+# ──────────────────────────────────────────────
+normalization:
+  method: "rolling_zscore"
+  window: 500
+
+# ──────────────────────────────────────────────
+# Train / Test Split
+# ──────────────────────────────────────────────
+split:
+  test_ratio: 0.2
+  n_cv_folds: 5
+
+# ──────────────────────────────────────────────
+# TD3 Hyperparameters
+# ──────────────────────────────────────────────
+# NOTE: total_timesteps stays at the STANDARD 200k screening budget.
+# EXP-007 (400k) is NOT adopted as the champion's training budget — see the EXP-007
+# log entry: doubling training time did not converge the actor and only hardened the
+# long-bias. So EXP-008 reverts to the 200k screening budget (the cheap, paired budget),
+# and changes exactly ONE thing: the portfolio allocation rule (environment, below).
+td3:
+  # Decoupled learning rates
+  learning_rate:
+    actor: 0.0001
+    critic: 0.0003
+
+  # Crucial for stable convergence in crypto
+  lr_schedule: "linear" # or "cosine"
+
+  gamma: 0.99
+  tau: 0.005
+  batch_size: 512
+  buffer_size: 100000
+  learning_starts: 10000
+  train_freq: 4
+  policy_delay: 2
+  target_noise_clip: 0.5
+  target_policy_noise: 0.2
+  action_noise_std: 0.1
+  total_timesteps: 200000   # standard screening budget (EXP-007's 400k NOT adopted)
+  net_arch:
+    pi: [256, 128]
+    qf: [256, 128]
+
+# ──────────────────────────────────────────────
+# Environment
+# ──────────────────────────────────────────────
+# EXP-008 CHANGE — cash-enabling allocation: allocation_mode "renormalize" -> "scaled"
+# (base = champion EXP-005; cost levers + observation ALL UNCHANGED; training length
+#  reverted to the standard 200k screening budget).
+#
+# STRUCTURAL LEVER — REQUIRES CODE CHANGE + ORCHESTRATOR SIGN-OFF (like EXP-006).
+# This changes execution semantics, so EXP-008 is NOT paired with EXP-001..007 on the
+# execution axis: it is a fresh structural baseline for the cash branch, compared to
+# champion EXP-005 on the headline metric only (same seeds [42,123], same 2 folds, same
+# data_fingerprint ec2e07548f555da2).
+#
+# WHY THIS, WHY NOW (root cause exposed by EXP-007 diagnostics, not a guess):
+#   The current rule in src/utils/portfolio.py::compute_target_holdings is
+#     clipped = clip(target_weights, 0, max_position)
+#     if sum(clipped) > 1.0: clipped /= sum(clipped)   # <-- FORCE-INVEST
+#   With 10 assets, sum(clipped) exceeds 1.0 whenever the MEAN raw weight > 0.10,
+#   i.e. whenever actions/mean > -0.80. The agent has NEVER been below that:
+#     EXP-001 actions/mean ~0.48 (sum~7.4)  ... EXP-007 actions/mean ~0.84-0.87 (sum~9.2).
+#   => In EVERY experiment of the whole chain the portfolio is renormalized to ~100%
+#      invested, ~0% cash. The agent is structurally a permanently ~fully-long basket.
+#      To hold even 50% cash it would have to drive ALL TEN assets to action ~ -0.9
+#      simultaneously — a corner of the action space the policy never visits, and which
+#      lowering individual actions does NOTHING to approach (renorm cancels it).
+#   This is the mechanical root of the "down-market helplessness" seen every fold_1:
+#   the agent cannot de-risk to cash, so a no-edge long basket is dragged through every
+#   selloff (fold_1 Sharpe -1.2 .. -2.5 across the chain). EXP-007 made it WORSE: more
+#   training pushed actions/mean 0.59 -> 0.85, hardening the long-bias, while fold_1
+#   regressed for seed 42 (-1.21 -> -2.48). Longer training cannot buy the one thing
+#   that helps in a downtrend (cash) because the rule forbids cash.
+#
+# THE CHANGE (allocation_mode = "scaled"):
+#   Divide by a FIXED divisor (n_assets * max_position) instead of by sum(clipped):
+#     invested_fraction = sum(clipped) / (n_assets * max_position)   # in [0, 1]
+#     cash_fraction     = 1 - invested_fraction
+#   Now the MEAN action directly controls net exposure: at today's learned actions/mean
+#   ~0.84 the agent would hold ~8% cash, and — critically — LOWERING actions in a
+#   downtrend genuinely de-risks (a usable gradient toward cash), instead of being
+#   cancelled by renormalization. Relative tilt across assets is preserved.
+#   Hypothesis: gives the agent a learnable cash escape -> fold_1 (down-market) drawdown
+#   and Sharpe improve without sacrificing fold_0 (the up-market basket can still go
+#   ~fully invested by raising actions). Watch: cash_ratio > 0 in fold_1, actions/mean
+#   NOT pinned high, fold_1 MaxDD down from ~0.41-0.44.
+#
+#   GUARD / KILL CRITERION: if the agent simply collapses to all-cash (actions/mean
+#   crashes toward -1, n_trades -> ~0, flat equity, Sharpe ~0/NaN) the lever
+#   over-corrects -> REJECT and consider a softer divisor or an explicit cash action.
+environment:
+  window_size: 50
+  reward_scaling: 1.0
+  max_position: 1.0
+  # Carried over from champion EXP-005 (cost levers + observation, ALL UNCHANGED).
+  rebalance_threshold: 0.10
+  turnover_penalty_coef: 0.004
+  cross_sectional_momentum: false  # champion observation (momentum branch still deferred)
+  momentum_window: 12
+  # THE ONE CHANGE (vs champion, which behaves as "renormalize"):
+  allocation_mode: "scaled"   # "renormalize" (champion default) | "scaled" (this experiment)
+
+# ──────────────────────────────────────────────
+# Training
+# ──────────────────────────────────────────────
+training:
+  seeds: [42, 123]
+  cv_train_months: 2
+  cv_validation_months: 1
+  model_dir: "models"
+  mlflow_experiment_name: "td3_crypto_trading"
+  mlflow_tracking_uri: "mlruns"
+  progress_log_every_steps: 10000
+  max_folds: 2
+
+# ──────────────────────────────────────────────
+# Backtesting
+# ──────────────────────────────────────────────
+backtesting:
+  benchmark: "BTC/USDT"
+
+# ──────────────────────────────────────────────
+# Deployment
+# ──────────────────────────────────────────────
+deployment:
+  poll_interval_seconds: 300   # 5m candle
+  model_path: "models/td3_best.zip"

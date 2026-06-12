@@ -3,7 +3,51 @@
 Journal aller Experimente des autonomen Optimierungs-Loops. Regeln: siehe [PROTOCOL.md](PROTOCOL.md).
 Maschinenlesbare Version: [ledger.jsonl](ledger.jsonl). Modelle: `models/<exp_id>/` (nie überschrieben).
 
-Aktueller Champion: **EXP-005 (mean val Sharpe −1.12)** — Turnover-Penalty 0.004 (auf Band 0.10)
+Aktueller Champion: **EXP-007 (mean val Sharpe −0.85)** — wie EXP-005, trainiert mit 400k Steps
+
+---
+
+## EXP-007 — 2026-06-12 — Längeres Training (total_timesteps 200k → 400k)
+**Hypothese:** EXP-006 diagnostizierte UNTERTRAINING: bei 200k wanderte der Actor noch
+  (actions/mean steigend, actions/std fallend). Isoliere Variable (A) auf der Champion-
+  Observation (Momentum AUS): verdoppeltes Training konvergiert die Politik und hebt Sharpe.
+**Änderung:** td3.total_timesteps: 200000 → 400000   (Basis: EXP-005, Momentum aus)
+**Basis:** Commit 9143dea, data_fingerprint `ec2e07548f555da2` (ACHTUNG: total_timesteps IST
+  hier die experimentelle Variable → NICHT mit EXP-001..006 auf der Trainingslängen-Achse
+  gepaart; Vergleich nur auf Headline-Metrik gegen Champion EXP-005, gleiche Seeds/Folds/Daten).
+**Budget:** 400k Steps × 2 Seeds × 2 Folds (~2× Wall-Clock, ~2h30)
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **−0.85** (std 0.15) | MaxDD **0.284** | CPR 0.90
+  Pro Fold: S42 F0 **+0.47** (CPR 1.025) / F1 −2.48 · S123 F0 **+0.58** (CPR 1.030) / F1 −1.98
+  Gepaart 3:1 (S42/F0 +0.67, S123/F0 +1.36, S123/F1 +0.29 besser; **S42/F1 −1.27 schlechter**)
+  **ERSTE PROFITABLE VAL-FOLDS DER GESAMTEN KETTE** (beide fold_0).
+**Entscheidung:** ⭐ ADOPTIERT → neuer Champion. Delta +0.27 > 0.05-Schwelle, MaxDD besser
+  (0.284 vs 0.355), kein Crash/NaN. **ABER:** Adoption ruht allein auf den zwei fold_0-Profiten
+  (Up-Markt-Rückenwind auf Long-Basket = evtl. Regime-Glück, kein Edge); S42/F1 regressiert stark.
+  **400k wird NICHT als Screening-Budget übernommen** (Begründung unten) — EXP-008 zurück auf 200k.
+**Modelle:** `models/exp_007/`
+**MLflow:** Runs `seed_42` (7d16f40c), `seed_123` (3bfc4d90), Experiment `td3_crypto_trading`
+**Learnings — DREI BEFUNDE:**
+  **(1) Actor bei 400k NICHT konvergiert.** actions/mean steigt über die letzten 50k beider
+  Seeds weiter (s123 0.859→0.874), actions/std fällt weiter (0.423→0.391). Über 200k→400k:
+  actions/mean +0.25 (0.59→0.84-0.87), actions/std −0.34 (0.73→0.39-0.45). critic_loss sauber
+  (~1e-6). **Längeres Training konvergiert die Politik NICHT — es härtet nur den Long-Bias.**
+  **(2) „Hold everything long" wird stärker, nicht klüger.** Alle 10 Per-Asset-Action-Means
+  0.64-0.93. Die Extra-Steps verschieben nur die Tilt innerhalb eines Dauer-Long-Korbs.
+  **(3) WURZELURSACHE GEFUNDEN — der Agent KANN strukturell kein Cash halten.**
+  `compute_target_holdings` renormalisiert die Gewichte durch `sum`, sobald `sum > 1.0`. Bei
+  10 Assets ist `sum > 1.0`, sobald actions/mean > **−0.80** — wo der Agent NIE war (selbst
+  EXP-001 ~0.48 → sum 7.4). **→ In JEDEM Experiment seit EXP-001 ist das Portfolio auf ~100 %
+  investiert / ~0 % Cash zwangs-renormalisiert.** Das ist die mechanische Wurzel der „Down-Markt-
+  Hilflosigkeit": ein edge-loser Long-Korb wird durch jeden fold_1-Selloff gezogen, und mehr
+  Training (EXP-007) macht es SCHLECHTER (Long-Bias härter → S42/F1 −1.21→−2.48). Einzelne
+  Actions zu senken bringt nichts — die Renorm hebt es auf. **Verzweigung → EXP-008:** der
+  EXP-006-Gate („400k hilft → Momentum AN + 400k") ist durch diese Evidenz überholt — 400k
+  konvergiert nicht und Momentum ändert das Handelsverhalten nachweislich nicht. Der bindende
+  Hebel ist die **Cash-Fähigkeit**: `allocation_mode "renormalize" → "scaled"` (fester Divisor
+  n_assets·max_position statt Summe) gibt dem Agenten einen lernbaren Cash-Ausweg im Down-Markt.
+  Anmerkung: `perf/*`-Metriken weiter ohne `step=` → Endwert = fold_1-Snapshot (fold_0 nicht
+  direkt beobachtbar); EXP-008 soll `cash_ratio` in die Eval-Diagnostik aufnehmen.
 
 ---
 
