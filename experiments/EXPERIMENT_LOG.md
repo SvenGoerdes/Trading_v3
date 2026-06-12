@@ -7,6 +7,50 @@ Aktueller Champion: **EXP-007 (mean val Sharpe −0.85)** — wie EXP-005, train
 
 ---
 
+## EXP-011 — 2026-06-12 — Breitere Netzarchitektur (net_arch pi/qf [256,128] → [400,300])
+**Hypothese:** EXP-010 zeigte: die Observation ist nicht der Bottleneck (Cross-Sectional-Momentum
+  erzeugt auf keinem Horizont Winner-Konzentration). Eskalation in den Policy/Algorithmus-Branch,
+  cheapest-first (pre-registriert in EXP-010-Kill-(a)): testet, ob der Near-Cash-Kollaps ein
+  Kapazitäts-Bottleneck ist — ob ein [256,128]-MLP schlicht zu klein ist, die 13-Feature-pro-Asset-
+  Observation in eine selektive Allokation zu mappen. [400,300] = kanonische größere TD3/DDPG-Breite
+  (Fujimoto et al. 2018), ~2× Parameter, reine Config, kein Code. Erwartung: cash_ratio_mean < 0.85,
+  Trade-HHI ≫ 0.10, positive Sharpe über BEIDE Seeds.
+**Änderung:** td3.net_arch.pi/qf: [256,128] → [400,300]   (Basis: EXP-010 `scaled` + Momentum-AN)
+**Basis:** Commit 4579be1, data_fingerprint `ec2e07548f555da2` (SAUBER mit EXP-010 gepaart auf jeder
+  Achse außer der Kapazität — beste Paarung der Struktur-Kette. Caveats wie EXP-008..010: Budget 200k
+  vs Champion-Headline 400k (EXP-007), `scaled`-Execution → Headline-Vergleich indikativ).
+**Budget:** 200k Steps × 2 Seeds × 2 Folds
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **+1.46** (std 0.47) | MaxDD **0.041** | CPR 0.991
+  Pro Fold: S42 F0 **+6.48** (CPR 1.019, MaxDD 0.007) / F1 **−2.63** (CPR 0.937, MaxDD 0.134)
+            S123 F0 +0.91 (CPR 1.005, MaxDD 0.014) / F1 +1.08 (CPR 1.003, MaxDD 0.009)
+  3 von 4 Folds profitabel; die fold_0-Seed-Konsistenz von EXP-010 ist WEG (S42/F0 +6.48 vs
+  S123/F0 +0.91) — der breitere, weiter edge-lose Actor landet pro Seed in anderen Basins.
+**Entscheidung:** ❌ ABGELEHNT — **Kill-Kriterium (a) NO-LIFT (vorab registriert) FEUERT** (mit Kill-(b)-
+  Churn-no-Edge-Geruch auf S42/F1). Die verdoppelte Actor-Kapazität hob den Agenten NICHT vom Near-Cash-
+  Attraktor: `actions/mean` über alle 200k Steps in BEIDEN Seeds bei [−0.03, +0.01] gepinnt (identischer
+  konvergierter Attraktor wie EXP-008/009/010), critic_loss → 0 ab ~105k = konvergiert. **Per-Asset-
+  Trade-HHI 0.105 / 0.122** (uniform, identisch zu EXP-006/010). `n_trades` 18 / 28 (fold_1), total_cost
+  27 / 42. Der +1.46 ist erneut ein Geldmarktfonds-Artefakt (profit_factor 9.6 / 412 auf 18–28 Trades
+  eines ~90%-Cash-Buchs). **EINZIGES Lebenszeichen:** S42/F1 senkte cash_ratio_mean auf 0.795 (< 0.85 =
+  mehr Kapitaleinsatz) — aber in einen VERLUST mit 13× größerem Drawdown (−6.3%, MaxDD 0.134) auf
+  uniformem Buch → Kapazität kaufte Deployment, NICHT Edge. **Champion bleibt EXP-007.**
+**Modelle:** `models/exp_011/`
+**MLflow:** Runs `seed_42` (a5254825), `seed_123` (5de011d5), Experiment `td3_crypto_trading`
+**Learnings:** **Repräsentations-Kapazität ist NICHT der Bottleneck.** Damit ist die Policy/
+  Repräsentations-Achse ERSCHÖPFT, neben Kosten (EXP-002..005), Trainingslänge (EXP-007), Cash-Mechanik
+  (EXP-008), Penalty (EXP-009) und Signal/Observation (EXP-006/010). Die akkumulierte Evidenz über 11
+  Experimente (win_rate ~0.5, Timing Münzwurf, HHI ~0.10 auf JEDER Variante, überall sauber konvergierte
+  Critics) deutet stark auf **keinen handelbaren Direktions-Edge in diesem 10-Asset-5m-Universum mit
+  diesen Features** — nicht auf einen fehlenden Hyperparameter. **Verzweigung → ESKALATION AN USER:**
+  (A) SAC-Swap (pre-registriert, ~25 Zeilen Code + 1 Screening-Lauf, letzter ungetesteter Algorithmus-
+  Familien-Hebel; Config bereit: `exp_012_sac_swap.yml`); (B) formaler No-Edge-Schluss (RL-Suche stoppen);
+  (C) Daten-Achse: gröberer Timeframe (1h) — Pipeline-Re-Run + neuer Fingerprint, bricht Paarung mit
+  allen 11 Experimenten. **Strategist-Empfehlung: A zuerst** (billig, liefert die entscheidende
+  Cross-Familien-Diagnose vor dem teuren Ledger-Reset von C).
+
+---
+
 ## EXP-010 — 2026-06-12 — Cross-Sectional-Momentum AN, Trend-Horizont (momentum_window 12 → 48, ~4h)
 **Hypothese:** EXP-009 zeigte: der Turnover-Penalty war NICHT bindend, die edge-lose Reward-
   Landschaft ist es — bei fehlendem Direktions-Edge plus Kosten IST Cash-Halten optimal. Eskalation

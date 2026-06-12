@@ -1,0 +1,48 @@
+{
+  "experiment_id": "exp_011",
+  "timestamp": "2026-06-12T19:06:25+00:00",
+  "git_commit": "4579be1",
+  "config_path": "experiments/configs/exp_011_wider_net_arch.yml",
+  "data_fingerprint": "ec2e07548f555da2",
+  "model_dir": "models/exp_011",
+  "models": {
+    "42": "models/exp_011/td3_seed42_best.zip",
+    "123": "models/exp_011/td3_seed123_best.zip"
+  },
+  "n_seeds": 2,
+  "n_folds": 2,
+  "aggregate": {
+    "mean_mean_sharpe_ratio": 1.4603731614977118,
+    "std_mean_sharpe_ratio": 0.4667302547084867,
+    "mean_mean_cpr": 0.9909844333076133,
+    "std_mean_cpr": 0.012959945045080024,
+    "mean_mean_max_drawdown": 0.040731780190115974,
+    "std_mean_max_drawdown": 0.029580781492395947
+  },
+  "per_seed": {
+    "42": [
+      {
+        "sharpe_ratio": 6.482886116767741,
+        "cpr": 1.0191551463325634,
+        "max_drawdown": 0.006991067254749335
+      },
+      {
+        "sharpe_ratio": -2.6286792843553437,
+        "cpr": 0.936893830192503,
+        "max_drawdown": 0.1336340561102745
+      }
+    ],
+    "123": [
+      {
+        "sharpe_ratio": 0.9122298563351616,
+        "cpr": 1.0046069975445304,
+        "max_drawdown": 0.013532936720584358
+      },
+      {
+        "sharpe_ratio": 1.0750559572432887,
+        "cpr": 1.0032817591608563,
+        "max_drawdown": 0.008769060674855687
+      }
+    ]
+  }
+}

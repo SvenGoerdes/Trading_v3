@@ -1,0 +1,223 @@
+# ──────────────────────────────────────────────
+# Trading Universe
+# ──────────────────────────────────────────────
+symbols:
+  - BTC/USDT
+  - ETH/USDT
+  - SOL/USDT
+  - AVAX/USDT
+  - LINK/USDT
+  - POL/USDT
+  - UNI/USDT
+  - AAVE/USDT
+  - LTC/USDT
+  - NEAR/USDT
+
+timeframe: "5m"
+
+# ──────────────────────────────────────────────
+# Portfolio
+# ──────────────────────────────────────────────
+initial_balance: 10000.0
+trading_fee_pct: 0.001       # 0.1% taker fee
+slippage_pct: 0.0005         # 0.05% slippage estimate
+
+# ──────────────────────────────────────────────
+# Data Engineering
+# ──────────────────────────────────────────────
+data:
+  lookback_days: 365
+  missing_candle_policy:
+    ffill_limit: 3
+    stale_flag_limit: 20
+    segment_split_beyond: 20
+  paths:
+    raw: "data/01_raw"
+    intermediate: "data/02_intermediate"
+    features: "data/03_features"
+    normalized: "data/04_normalized"
+    splits: "data/05_splits"
+
+# ──────────────────────────────────────────────
+# Technical Indicators
+# ──────────────────────────────────────────────
+indicators:
+  rsi_window: 14
+  sma_window: 20
+  ema_window: 20
+  stochastic_window: 14
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  roc_window: 10
+  williams_r_window: 14
+  disparity_sma_window: 20
+  ad: true
+  obv: true
+
+# ──────────────────────────────────────────────
+# Normalization
+# ──────────────────────────────────────────────
+normalization:
+  method: "rolling_zscore"
+  window: 500
+
+# ──────────────────────────────────────────────
+# Train / Test Split
+# ──────────────────────────────────────────────
+split:
+  test_ratio: 0.2
+  n_cv_folds: 5
+
+# ──────────────────────────────────────────────
+# TD3 / Algorithm Hyperparameters
+# ──────────────────────────────────────────────
+# ============================================================================
+# EXP-012 PROPOSAL — ALGORITHM SWAP: TD3 -> SAC  (STRUCTURAL / CODE REQUIRED)
+# ============================================================================
+# THIS CONFIG IS THE ARTIFACT FOR THE PRE-REGISTERED DEFAULT ESCALATION (Option A
+# in the strategist's EXP-011 verdict). It is RUNNABLE ONLY AFTER the code change
+# below lands. It carries the EXP-010/011 structural base UNCHANGED on every axis;
+# the SINGLE experimental variable is the algorithm class (TD3 -> SAC).
+#
+# WHY (pre-registered): EXP-011 fired the kill-(a) NO-LIFT criterion. Widening the
+# actor/critic MLP [256,128] -> [400,300] did NOT move the agent off the near-cash
+# attractor (actions/mean pinned in [-0.03, +0.01] over all 200k steps in BOTH
+# seeds; per-asset trade HHI 0.105 / 0.122 = uniform; n_trades 18 / 28 fold_1;
+# critic_loss -> 0 by ~105k = converged, NOT undertrained). Representation CAPACITY
+# is therefore NOT the bottleneck. Per the pre-registered escalation, the remaining
+# policy-branch lever is the ALGORITHM class.
+#
+# HYPOTHESIS: TD3's deterministic actor + a tiny, edge-less reward gradient (the
+# cost-signal is ~20x below the reward noise floor, established EXP-001/004) collapses
+# to the trivial cash policy because that is the lowest-variance deterministic action.
+# SAC optimises a MAXIMUM-ENTROPY objective: it is rewarded for keeping the policy
+# stochastic and is far less prone to premature collapse onto a single low-action
+# mode. If ANY exploitable structure exists, SAC's entropy bonus + twin soft-Q is the
+# most likely on-policy-family lever to surface it. If SAC ALSO collapses to near-cash
+# (cash_ratio_mean > 0.85, HHI ~0.10, Sharpe an artifact), that is decisive converged
+# evidence — across the deterministic AND the stochastic actor-critic family — that
+# this 10-asset 5m universe with these features carries NO tradable directional edge.
+# That is itself a publishable negative result and the trigger to STOP the algorithm
+# search and move to the DATA axis (coarser timeframe; separate orchestrator decision).
+#
+# ── CODE REQUIRED (precise spec, ~25 lines, no new deps; SB3 2.7.1 ships SAC) ──
+# 1. src/utils/config.py — add ONE optional field to TD3Config (or a thin AlgoConfig):
+#       algorithm: str = "td3"          # {"td3", "sac"}
+#    Parse from raw["td3"].get("algorithm", "td3"). SAC ignores the TD3-only keys
+#    (policy_delay, target_noise_clip, target_policy_noise, action_noise_std); leave
+#    them in the dataclass, just don't pass them to SAC.
+# 2. src/pipelines/training/nodes.py — add create_sac_agent(env, cfg, seed) -> SAC
+#    mirroring create_td3_agent. Reuse the CustomTD3 decoupled-LR + lr_schedule
+#    pattern as a CustomSAC(SAC) subclass: SAC has actor.optimizer and critic.optimizer
+#    too, so _update_learning_rate transfers 1:1. SAC's entropy temperature uses its
+#    own ent_coef_optimizer ("auto" default) — leave SB3's default schedule on it
+#    (do NOT apply the custom multiplier to the entropy optimiser). Pass:
+#       policy="MlpPolicy", gamma, tau, batch_size, buffer_size, learning_starts,
+#       train_freq, gradient_steps=train_freq (SAC default -1 == train_freq; pin
+#       explicitly for parity), ent_coef="auto", target_update_interval=1,
+#       policy_kwargs={"net_arch": [256,128]}  # SAC shares one net_arch list (NOT a
+#       pi/qf dict). Use the SCREENING-SIZE [256,128] here to keep this a clean
+#       ALGORITHM-only swap vs EXP-010 (do NOT also carry the EXP-011 [400,300]: that
+#       was rejected and would bundle two changes). seed=seed, device=get_torch_device().
+#    NOTE: SAC has NO action_noise / no target-policy-noise (entropy replaces them) —
+#    this is inherent to the algorithm, NOT a second tuned change.
+# 3. src/pipelines/training/pipeline.py:400 — dispatch:
+#       agent = (create_sac_agent if config.td3.algorithm == "sac"
+#                else create_td3_agent)(train_env, config.td3, seed)
+#    Log mlflow param "algorithm". The eval/callbacks path is algorithm-agnostic
+#    (they call agent.predict(..., deterministic=True)) — NO other change needed.
+# 4. Tests: extend the existing agent-construction test to assert create_sac_agent
+#    returns a SAC with the configured net_arch and that deterministic predict()
+#    yields finite actions in [-1, 1]. No financial-math change -> no new money tests.
+#
+# ── PRE-REGISTERED DECISION CRITERIA (judge by PARTICIPATION + CONCENTRATION, not
+#    raw Sharpe — same bar as EXP-009/010/011) ──
+#   ADOPT: cash_ratio_mean < 0.85 AND per-asset trade HHI WELL above 0.10 (winner
+#     concentration) AND mean val Sharpe beats the active scaled line (EXP-010 +2.92)
+#     with the gain reproducing across BOTH seeds (not one lucky fold_0) -> first
+#     genuine selective-trading edge -> ADOPT + queue 1M-step / 5-seed / all-folds
+#     confirmation before building further.
+#   KILL (a) NO-LIFT: cash_ratio_mean > 0.85, n_trades single-to-low-double-digit,
+#     HHI ~0.10 (uniform), actions/mean pinned ~0 -> SAC's entropy objective ALSO
+#     fails to deploy -> REJECT. POLICY/ALGORITHM BRANCH EXHAUSTED. Formal conclusion:
+#     no tradable edge in this universe/feature set at 5m via online actor-critic RL.
+#     -> escalate to the DATA axis (coarser timeframe re-run) OR stop, per user.
+#   KILL (b) CHURN-NO-EDGE: SAC participates (cash < 0.85, n_trades in the hundreds)
+#     but trades stay UNCONCENTRATED (HHI ~0.10) and Sharpe negative with total_cost
+#     climbing back toward ~960 -> entropy bought churn, not edge -> REJECT; bottleneck
+#     is signal predictiveness, not policy class -> data/feature axis, not more RL tuning.
+#
+# COMPARISON BASE: algorithm-only swap; data, obs dimensionality, execution semantics,
+# net_arch [256,128], seeds, folds all identical to EXP-010 -> paired with EXP-010 on
+# every axis except the algorithm class. Headline compared against the active scaled
+# line (EXP-010 +2.92, itself a near-cash artifact). data_fingerprint must remain
+# ec2e07548f555da2.
+# ============================================================================
+td3:
+  algorithm: "sac"            # THE ONE CHANGE (vs EXP-010 / EXP-011): TD3 -> SAC
+
+  # Decoupled learning rates (CustomSAC reuses the CustomTD3 LR-schedule machinery)
+  learning_rate:
+    actor: 0.0001
+    critic: 0.0003
+
+  lr_schedule: "linear"
+
+  gamma: 0.99
+  tau: 0.005
+  batch_size: 512
+  buffer_size: 100000
+  learning_starts: 10000
+  train_freq: 4
+  # --- TD3-only keys below are IGNORED by SAC (entropy replaces target-policy noise
+  #     and explicit action noise). Left in place so the dataclass stays unchanged. ---
+  policy_delay: 2
+  target_noise_clip: 0.5
+  target_policy_noise: 0.2
+  action_noise_std: 0.1
+  total_timesteps: 200000     # standard screening budget (unchanged)
+  net_arch:
+    pi: [256, 128]            # screening-size MLP — NOT the rejected EXP-011 [400,300]
+    qf: [256, 128]            # (SAC shares ONE net_arch list internally; see code spec)
+
+# ──────────────────────────────────────────────
+# Environment
+# ──────────────────────────────────────────────
+# All environment settings carried UNCHANGED from EXP-010 (scaled line + momentum on).
+environment:
+  window_size: 50
+  reward_scaling: 1.0
+  max_position: 1.0
+  rebalance_threshold: 0.10
+  turnover_penalty_coef: 0.001
+  cross_sectional_momentum: true   # kept ON from EXP-010
+  momentum_window: 48              # kept at ~4h trend horizon from EXP-010
+  allocation_mode: "scaled"        # retained cash-enabling mechanic (EXP-008..011)
+
+# ──────────────────────────────────────────────
+# Training
+# ──────────────────────────────────────────────
+training:
+  seeds: [42, 123]
+  cv_train_months: 2
+  cv_validation_months: 1
+  model_dir: "models"
+  mlflow_experiment_name: "td3_crypto_trading"
+  mlflow_tracking_uri: "mlruns"
+  progress_log_every_steps: 10000
+  max_folds: 2
+
+# ──────────────────────────────────────────────
+# Backtesting
+# ──────────────────────────────────────────────
+backtesting:
+  benchmark: "BTC/USDT"
+
+# ──────────────────────────────────────────────
+# Deployment
+# ──────────────────────────────────────────────
+deployment:
+  poll_interval_seconds: 300   # 5m candle
+  model_path: "models/td3_best.zip"
