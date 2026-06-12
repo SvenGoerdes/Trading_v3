@@ -7,6 +7,62 @@ Aktueller Champion: **EXP-007 (mean val Sharpe −0.85)** — wie EXP-005, train
 
 ---
 
+## EXP-008 — 2026-06-12 — Cash-fähige Allokation (allocation_mode "renormalize" → "scaled")
+**Hypothese:** EXP-007 fand die Wurzelursache: `compute_target_holdings` renormalisiert über
+  `sum` → in JEDEM Experiment war das Portfolio zwangs-zu-~100%-investiert, ~0% Cash. Ein fester
+  Divisor (`n_assets · max_position`) gibt dem Agenten einen lernbaren Cash-Ausweg: niedrigere
+  Actions de-risken im Down-Markt wirklich (nutzbarer Gradient), statt von der Renorm aufgehoben
+  zu werden. Erwartung: fold_1 (Down-Markt) MaxDD/Sharpe besser, fold_0 unverändert.
+**Änderung:** environment.allocation_mode: "renormalize" → "scaled"   (Basis: Champion EXP-005)
+**Basis:** Commit 1db4664, data_fingerprint `ec2e07548f555da2` (STRUKTURELL/Code, wie EXP-006 —
+  NICHT auf der Execution-Achse mit EXP-001..007 gepaart; frischer Struktur-Baseline für den
+  Cash-Branch. ACHTUNG zwei Vergleichs-Caveats: Budget 200k vs Champion-Headline 400k (EXP-007),
+  UND geänderte Execution-Semantik → Headline-Vergleich nur indikativ).
+**Budget:** 200k Steps × 2 Seeds × 2 Folds
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **+1.42** (std 0.61) | MaxDD **0.026** | CPR 1.000
+  — ERSTES POSITIVES MEAN DER KETTE und ERSTER positiver Down-Markt-Fold (S42/F1 +1.45).
+  Pro Fold: S42 F0 +0.17 (CPR 1.001, MaxDD 0.02) / F1 +1.45 (CPR 1.005, MaxDD 0.01)
+            S123 F0 +5.82 (CPR 1.017, MaxDD 0.007) / F1 −1.75 (CPR 0.976, MaxDD 0.065)
+  Extreme Cross-Seed-Varianz auf beiden Folds; F1-Vorzeichen kippt (S42 +1.45 vs S123 −1.75).
+**Entscheidung:** ❌ ABGELEHNT — **Kill-Kriterium (im EXP-008-Vorschlag vorab registriert) FEUERT:
+  Agent ist quasi all-cash.** `perf/cash_ratio_mean` **0.969 / 0.876** (88–97 % CASH im Mittel),
+  `cash_ratio_min` 0.30 / 0.60, `perf/n_trades` **10** über ~17.8k Steps × 10 Assets (Champion-
+  Kette ~250–300/Fold), `actions/mean` **−0.006 / −0.018** (Champion ~0.84) → netto ~5 % investiert.
+  total_cost **30 / 32** vs Champion ~960 (−97 %). Der +1.42 ist die Sharpe eines Geldmarktfonds
+  (top Risk-adjusted-Ratio auf ~null Kapitaleinsatz), KEIN Handels-Edge. Champion bleibt EXP-007.
+  **ABER:** `scaled`-Mechanik wird als Execution-Fix BEIBEHALTEN (Basis für EXP-009) — sie hat
+  ihren Zweck erfüllt (fold_1 MaxDD ~0.41 → 0.01–0.06, Down-Markt-Hilflosigkeit weg), nur ins
+  Nicht-Handeln über-korrigiert.
+**Modelle:** `models/exp_008/`
+**MLflow:** Runs `seed_42` (dca5d4f3), `seed_123` (b492230c), Experiment `td3_crypto_trading`
+**Learnings — DREI BEFUNDE:**
+  **(1) `scaled` funktioniert mechanisch — und genau deshalb geht der Agent in Cash.** Sobald
+  Cash eine freie, lernbare Option ist, IST bei fehlendem Edge (win_rate ~0.5, Timing ~Münzwurf,
+  bestätigt EXP-001..006) plus positiven Kosten die Sharpe-/Return-maximale Politik = NICHT handeln.
+  Der Agent hat das korrekt gelernt. fold_1 MaxDD-Kollaps (0.41 → 0.01–0.06) belegt: die Cash-
+  Fähigkeit heilt zwar die Down-Markt-Hilflosigkeit, aber durch Nicht-Teilnahme, nicht durch Edge.
+  **(2) Stabiler Attraktor, KEIN Untertraining.** `actions/mean` fällt bis Step 10k auf ~0.00 und
+  bleibt dort über alle 200k Steps in BEIDEN Seeds flach (Gegensatz zu EXP-006/007, wo der Mean
+  weiterstieg). `actions/std` ~0.92 (Einzel-Actions spannen [−1,1], mitteln sich aber zu ~0 →
+  scaled → ~5 % netto). critic_loss sauber (~1e-6), actor_loss flach. Die Politik IST konvergiert
+  — auf „fast nichts tun". Mehr Training würde das NICHT ändern.
+  **(3) Headline-Sharpe ist seed-VERRAUSCHT, Verhalten seed-STABIL.** Die std 0.61 kommt fast nur
+  aus fold_0 (S123/F0 +5.82 = annualisierte Sharpe einer winzigen, glücklichen ~Cash-Position auf
+  wenigen Trades) und dem F1-Sign-Flip — beides Artefakt von ~10 Trades/Episode, nicht von echter
+  Varianz im Verhalten. Der Cash-Anteil ist über Seeds stabil.
+  **Bindender Hebel jetzt:** der Turnover-Penalty (0.004), getunt als Cash noch UNMÖGLICH war,
+  belohnt jetzt aktiv die Inaktivität → er ist der bindende Constraint auf Teilnahme.
+  **Verzweigung → EXP-009:** turnover_penalty_coef 0.004 → 0.001 auf der `scaled`-Basis. Erzwingt
+  Teilnahme und liefert die entscheidende Diagnose, die der +1.42 nicht geben kann: ist `scaled`
+  ein echter Edge oder nur eine teure Art, Cash zu halten? Zweiseitiges Kill-Kriterium: (a) Re-Churn
+  (n_trades ~250+, Kosten ~960, Sharpe negativ) → Penalty war tragend, edge-loser Korb kann nicht
+  profitabel handeln → REJECT; (b) Immer-noch-Cash (cash_ratio_mean > 0.85, n_trades einstellig) →
+  Penalty war NICHT bindend, das edge-lose Reward-Landschaft ist es → REJECT + Eskalation in den
+  Signal/Observation-Branch (Agent hat keinen GRUND zu investieren, weil kein Edge zum Ausdrücken).
+
+---
+
 ## EXP-007 — 2026-06-12 — Längeres Training (total_timesteps 200k → 400k)
 **Hypothese:** EXP-006 diagnostizierte UNTERTRAINING: bei 200k wanderte der Actor noch
   (actions/mean steigend, actions/std fallend). Isoliere Variable (A) auf der Champion-

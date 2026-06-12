@@ -1,0 +1,185 @@
+# ──────────────────────────────────────────────
+# Trading Universe
+# ──────────────────────────────────────────────
+symbols:
+  - BTC/USDT
+  - ETH/USDT
+  - SOL/USDT
+  - AVAX/USDT
+  - LINK/USDT
+  - POL/USDT
+  - UNI/USDT
+  - AAVE/USDT
+  - LTC/USDT
+  - NEAR/USDT
+
+timeframe: "5m"
+
+# ──────────────────────────────────────────────
+# Portfolio
+# ──────────────────────────────────────────────
+initial_balance: 10000.0
+trading_fee_pct: 0.001       # 0.1% taker fee
+slippage_pct: 0.0005         # 0.05% slippage estimate
+
+# ──────────────────────────────────────────────
+# Data Engineering
+# ──────────────────────────────────────────────
+data:
+  lookback_days: 365
+  missing_candle_policy:
+    ffill_limit: 3
+    stale_flag_limit: 20
+    segment_split_beyond: 20
+  paths:
+    raw: "data/01_raw"
+    intermediate: "data/02_intermediate"
+    features: "data/03_features"
+    normalized: "data/04_normalized"
+    splits: "data/05_splits"
+
+# ──────────────────────────────────────────────
+# Technical Indicators
+# ──────────────────────────────────────────────
+indicators:
+  rsi_window: 14
+  sma_window: 20
+  ema_window: 20
+  stochastic_window: 14
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  roc_window: 10
+  williams_r_window: 14
+  disparity_sma_window: 20
+  ad: true
+  obv: true
+
+# ──────────────────────────────────────────────
+# Normalization
+# ──────────────────────────────────────────────
+normalization:
+  method: "rolling_zscore"
+  window: 500
+
+# ──────────────────────────────────────────────
+# Train / Test Split
+# ──────────────────────────────────────────────
+split:
+  test_ratio: 0.2
+  n_cv_folds: 5
+
+# ──────────────────────────────────────────────
+# TD3 Hyperparameters
+# ──────────────────────────────────────────────
+# Standard 200k screening budget (unchanged from champion EXP-008).
+td3:
+  # Decoupled learning rates
+  learning_rate:
+    actor: 0.0001
+    critic: 0.0003
+
+  # Crucial for stable convergence in crypto
+  lr_schedule: "linear" # or "cosine"
+
+  gamma: 0.99
+  tau: 0.005
+  batch_size: 512
+  buffer_size: 100000
+  learning_starts: 10000
+  train_freq: 4
+  policy_delay: 2
+  target_noise_clip: 0.5
+  target_policy_noise: 0.2
+  action_noise_std: 0.1
+  total_timesteps: 200000   # standard screening budget
+  net_arch:
+    pi: [256, 128]
+    qf: [256, 128]
+
+# ──────────────────────────────────────────────
+# Environment
+# ──────────────────────────────────────────────
+# EXP-009 CHANGE — relax the turnover penalty: turnover_penalty_coef 0.004 -> 0.001
+# (base = champion EXP-008 = "scaled" allocation; the ONE change is the penalty coef).
+#
+# WHY THIS, WHY NOW — root cause from EXP-008 MLflow diagnostics (not a guess):
+#   EXP-008 adopted "scaled" allocation. Its headline mean Sharpe +1.42 is REAL but
+#   MISLEADING: the agent learned to hold ~88-97% CASH (perf/cash_ratio_mean 0.969 / 0.876)
+#   and made ~10 trades over a ~17.8k-step / 10-asset validation month (vs the champion
+#   chain's ~250-300). actions/mean collapsed to ~0.00 from step 10k onward and STAYED
+#   there for all 200k steps in both seeds (a converged stable attractor, NOT undertrained
+#   drift). Under "scaled", mean action ~0 -> net invested ~5%. total_cost cratered
+#   30/32 vs the champion's ~960. This is the Sharpe of a money-market fund: excellent
+#   risk-adjusted ratio on near-zero capital at risk, USELESS for the goal of profitable
+#   trading. The +1.42 is "barely participating", not "smart de-risking".
+#
+#   WHY the agent went to cash: with NO directional edge anywhere in the chain (win-rate
+#   ~0.5, SMA20 timing ~coin-flip) and a POSITIVE trading cost, the Sharpe-/return-
+#   maximizing policy under a free cash option IS to not trade. "scaled" finally gave
+#   inaction a mechanical home; the aggressively-tuned turnover penalty (0.0 -> 0.002 ->
+#   0.004 over EXP-004/005, optimized when cash was IMPOSSIBLE and the only lever was
+#   trade-less-often) now actively REWARDS that inaction. The penalty's job is done — it
+#   has become the binding constraint that pins the agent at ~all-cash.
+#
+# THE CHANGE (turnover_penalty_coef 0.004 -> 0.001):
+#   Lower the per-unit-turnover penalty by 4x to restore a participation incentive without
+#   removing cost-awareness entirely (0.001 still > 0, the gradient still "sees" cost).
+#   The no-trade band (rebalance_threshold 0.10) is kept as the primary churn brake;
+#   the reward penalty is relaxed so deploying capital is no longer net-negative by default.
+#   Hypothesis: net exposure rises off the ~5% floor (cash_ratio_mean falls well below 0.88),
+#   n_trades rises into the tens-to-hundreds, and we learn whether a PARTICIPATING scaled-mode
+#   agent retains the positive-Sharpe behaviour or reverts to the chain's edge-less losses.
+#   This is the decisive diagnostic the +1.42 cannot give us: is "scaled" a genuine edge or
+#   just an expensive way to hold cash?
+#
+#   Watch: perf/cash_ratio_mean (target: materially < 0.88), perf/n_trades (target: >> 10),
+#   actions/mean (should lift off ~0), fold_1 Sharpe/MaxDD (does participation survive the
+#   down-market?), total_return_pct (real returns on real exposure, not money-market drift).
+#
+#   GUARD / KILL CRITERION (two-sided):
+#     (a) RE-CHURN: if n_trades explodes back to ~250+ and total_cost balloons toward the old
+#         ~960 with Sharpe collapsing negative -> the penalty was load-bearing -> REJECT,
+#         the edge-less basket cannot trade profitably and cost-shaping was the only crutch.
+#     (b) STILL-CASH: if cash_ratio_mean stays > 0.85 and n_trades stays ~single digits ->
+#         the penalty was NOT the binding constraint (the no-edge reward landscape is) ->
+#         REJECT this lever and escalate to the signal/observation branch (the agent has no
+#         REASON to deploy because it has no edge to express).
+environment:
+  window_size: 50
+  reward_scaling: 1.0
+  max_position: 1.0
+  # Carried over from champion EXP-008.
+  rebalance_threshold: 0.10
+  # THE ONE CHANGE (vs champion EXP-008):
+  turnover_penalty_coef: 0.001   # was 0.004 (champion); relax participation penalty 4x
+  cross_sectional_momentum: false  # champion observation (momentum branch still deferred)
+  momentum_window: 12
+  allocation_mode: "scaled"   # champion EXP-008 cash-enabling mode (UNCHANGED)
+
+# ──────────────────────────────────────────────
+# Training
+# ──────────────────────────────────────────────
+training:
+  seeds: [42, 123]
+  cv_train_months: 2
+  cv_validation_months: 1
+  model_dir: "models"
+  mlflow_experiment_name: "td3_crypto_trading"
+  mlflow_tracking_uri: "mlruns"
+  progress_log_every_steps: 10000
+  max_folds: 2
+
+# ──────────────────────────────────────────────
+# Backtesting
+# ──────────────────────────────────────────────
+backtesting:
+  benchmark: "BTC/USDT"
+
+# ──────────────────────────────────────────────
+# Deployment
+# ──────────────────────────────────────────────
+deployment:
+  poll_interval_seconds: 300   # 5m candle
+  model_path: "models/td3_best.zip"
