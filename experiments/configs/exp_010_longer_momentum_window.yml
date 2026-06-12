@@ -1,0 +1,213 @@
+# ──────────────────────────────────────────────
+# Trading Universe
+# ──────────────────────────────────────────────
+symbols:
+  - BTC/USDT
+  - ETH/USDT
+  - SOL/USDT
+  - AVAX/USDT
+  - LINK/USDT
+  - POL/USDT
+  - UNI/USDT
+  - AAVE/USDT
+  - LTC/USDT
+  - NEAR/USDT
+
+timeframe: "5m"
+
+# ──────────────────────────────────────────────
+# Portfolio
+# ──────────────────────────────────────────────
+initial_balance: 10000.0
+trading_fee_pct: 0.001       # 0.1% taker fee
+slippage_pct: 0.0005         # 0.05% slippage estimate
+
+# ──────────────────────────────────────────────
+# Data Engineering
+# ──────────────────────────────────────────────
+data:
+  lookback_days: 365
+  missing_candle_policy:
+    ffill_limit: 3
+    stale_flag_limit: 20
+    segment_split_beyond: 20
+  paths:
+    raw: "data/01_raw"
+    intermediate: "data/02_intermediate"
+    features: "data/03_features"
+    normalized: "data/04_normalized"
+    splits: "data/05_splits"
+
+# ──────────────────────────────────────────────
+# Technical Indicators
+# ──────────────────────────────────────────────
+indicators:
+  rsi_window: 14
+  sma_window: 20
+  ema_window: 20
+  stochastic_window: 14
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  roc_window: 10
+  williams_r_window: 14
+  disparity_sma_window: 20
+  ad: true
+  obv: true
+
+# ──────────────────────────────────────────────
+# Normalization
+# ──────────────────────────────────────────────
+normalization:
+  method: "rolling_zscore"
+  window: 500
+
+# ──────────────────────────────────────────────
+# Train / Test Split
+# ──────────────────────────────────────────────
+split:
+  test_ratio: 0.2
+  n_cv_folds: 5
+
+# ──────────────────────────────────────────────
+# TD3 Hyperparameters
+# ──────────────────────────────────────────────
+# Standard 200k screening budget (unchanged from the scaled structural line, EXP-008/009).
+td3:
+  # Decoupled learning rates
+  learning_rate:
+    actor: 0.0001
+    critic: 0.0003
+
+  # Crucial for stable convergence in crypto
+  lr_schedule: "linear" # or "cosine"
+
+  gamma: 0.99
+  tau: 0.005
+  batch_size: 512
+  buffer_size: 100000
+  learning_starts: 10000
+  train_freq: 4
+  policy_delay: 2
+  target_noise_clip: 0.5
+  target_policy_noise: 0.2
+  action_noise_std: 0.1
+  total_timesteps: 200000   # standard screening budget
+  net_arch:
+    pi: [256, 128]
+    qf: [256, 128]
+
+# ──────────────────────────────────────────────
+# Environment
+# ──────────────────────────────────────────────
+# EXP-010 CHANGE — escalate to the SIGNAL/OBSERVATION branch: enable cross-sectional
+# momentum with a TREND-horizon window. The ONE change vs the EXP-009 base is the
+# observation: cross_sectional_momentum false -> true at momentum_window 48 (~4h).
+# (Everything else — scaled allocation, rebalance_threshold 0.10, turnover_penalty_coef
+# 0.001 — is carried unchanged from the EXP-009 run.)
+#
+# WHY THIS, WHY NOW — the pre-registered escalation from EXP-009 fired (not a guess):
+#   EXP-009 dropped turnover_penalty_coef 0.004 -> 0.001 (4x) to test whether relaxing the
+#   cost penalty would lift the agent off the ~all-cash floor that EXP-008 hit. Result from
+#   MLflow (fold_1 perf snapshots, paired): cash_ratio_mean 0.969/0.876 (EXP-008) ->
+#   0.932/0.893 (EXP-009); n_trades 10/10 -> 12/9; net invested ~3-12% -> ~7-11%. The 4x
+#   penalty cut moved participation by noise-level amounts. actions/mean stayed pinned near
+#   0.00 across all 200k steps in both seeds (converged stable attractor, identical shape to
+#   EXP-008). The headline mean Sharpe +2.84 is a money-market artifact: profit_factor
+#   16-140 and win_rate 0.75-0.78 are computed on 9-12 trades of a near-cash book; the
+#   S123/F1 -3.46 outlier is one adverse move (total_return -3.9%, reward_skew -40) on a
+#   tiny undiversified position the down-market fold could not absorb. EXP-009's two-sided
+#   kill criterion (b) STILL-CASH FIRED: cash_ratio_mean > 0.85 with single-digit trades ->
+#   the turnover penalty was NEVER the binding constraint. The binding constraint is the
+#   EDGE-LESS reward landscape: with no directional signal, holding cash IS the optimal
+#   policy under positive costs. -> REJECT the penalty lever, ESCALATE to signal/observation.
+#
+# WHY A LONGER MOMENTUM WINDOW (12 -> 48), AND WHY IT IS NOT A RE-RUN OF EXP-006:
+#   EXP-006 added cross_sectional_momentum at momentum_window 12 (12 x 5m = 1h). It produced
+#   NO trade-concentration effect (per-asset trade HHI 0.109/0.112 vs uniform 0.10) and the
+#   signal metrics stayed at coin-flip (win_rate 0.43-0.47, profit_factor < 0.65). BUT that
+#   experiment ran on the RENORMALIZE base (forced ~full investment, ~0% cash) and was
+#   diagnosed as UNDERTRAINED, not signal-dead — the actor was still drifting at the 200k
+#   cutoff. EXP-007 then showed 400k does NOT converge it, it only hardens the long bias, and
+#   EXP-008 found the renormalize mechanic was structurally masking de-risking entirely.
+#   So EXP-006's momentum result was confounded on TWO axes (renormalize base + a 1h window
+#   that is mostly 5m microstructure noise). This experiment changes the SIGNAL CONTENT, not
+#   just re-runs the feature: a 48-bar (~4h) cross-sectional return ranks relative strength on
+#   a horizon where crypto trend/relative-strength edges actually live, on the current scaled
+#   base where cash is a real, learnable option. 48 is the longest window that still fits the
+#   constraint momentum_window <= window_size (50).
+#
+#   Hypothesis: a trend-horizon relative-strength signal gives the actor an edge to express,
+#   so it deploys capital SELECTIVELY toward cross-sectional winners (cash_ratio_mean falls
+#   below ~0.85, n_trades rises into the tens-to-low-hundreds with trades CONCENTRATED on
+#   high-momentum assets, not spread uniformly), and that selective exposure — not a near-cash
+#   accident — carries a positive Sharpe that survives the down-market fold_1.
+#
+#   Watch: per-asset trade HHI (target: >> 0.10 uniform = concentration on winners),
+#   perf/cash_ratio_mean (target: materially < 0.85 = real deployment), perf/n_trades
+#   (target: tens-to-low-hundreds, NOT thousands = selective not churn), win_rate /
+#   profit_factor on a meaningful trade count (target: off the 0.5 coin-flip), fold_1
+#   Sharpe/MaxDD (does a momentum-driven book beat the down-market instead of being dragged?).
+#
+#   GUARD / KILL CRITERION (two-sided, mirrors EXP-009):
+#     (a) NO-LIFT: if cash_ratio_mean stays > 0.85 and n_trades stays single-digit AND
+#         per-asset HHI ~0.10 (uniform) -> even a trend-horizon cross-sectional signal does
+#         not give the agent a reason to deploy -> REJECT. The observation is not the
+#         bottleneck; escalate to the POLICY/ALGORITHM branch (net_arch capacity or SAC),
+#         OR reconsider whether a tradable edge exists in this 10-asset 5m universe at all.
+#     (b) CHURN-NO-EDGE: if the signal makes the agent participate (cash_ratio_mean < 0.85,
+#         n_trades in the hundreds) but trades stay UNCONCENTRATED (HHI ~0.10) and Sharpe is
+#         negative with total_cost climbing back toward ~960 -> the agent trades on the signal
+#         but the signal carries no edge -> REJECT, the momentum content is not predictive ->
+#         escalate to a DIFFERENT signal (e.g. longer/multi-horizon momentum, volatility-scaled
+#         sizing) or the policy branch.
+#   ADOPT path: cash_ratio_mean < 0.85 AND HHI well above 0.10 (winner concentration) AND
+#     mean Sharpe beats the active scaled line with the gain reproducible across BOTH seeds
+#     (not one lucky fold_0) -> the FIRST genuine edge in the chain -> ADOPT + queue a 1M-step
+#     5-seed all-folds confirmation run before building anything further on it.
+#
+#   NOTE on comparison base: this is a fresh STRUCTURAL baseline on the observation axis
+#   (obs dimensionality +n_assets, like EXP-006) on the scaled mechanic — it is NOT paired on
+#   the execution/cost axis with EXP-001..007 and NOT paired with EXP-009 on the observation
+#   axis. Compare on the headline metric against the active scaled line (EXP-009 +2.84, itself
+#   a near-cash artifact) and judge primarily by the PARTICIPATION + CONCENTRATION diagnostics
+#   above, not the raw Sharpe. data_fingerprint must remain ec2e07548f555da2.
+environment:
+  window_size: 50
+  reward_scaling: 1.0
+  max_position: 1.0
+  # Carried over from the EXP-009 run (scaled structural line).
+  rebalance_threshold: 0.10
+  turnover_penalty_coef: 0.001   # unchanged from EXP-009 (found non-binding on participation)
+  # THE ONE CHANGE (vs EXP-009): enable the cross-sectional momentum observation feature
+  # at a trend-horizon window.
+  cross_sectional_momentum: true   # was false; escalate to the signal/observation branch
+  momentum_window: 48              # was 12 (EXP-006); 48 x 5m = ~4h trend horizon (<= window_size 50)
+  allocation_mode: "scaled"   # retained cash-enabling mechanic (UNCHANGED from EXP-008/009)
+
+# ──────────────────────────────────────────────
+# Training
+# ──────────────────────────────────────────────
+training:
+  seeds: [42, 123]
+  cv_train_months: 2
+  cv_validation_months: 1
+  model_dir: "models"
+  mlflow_experiment_name: "td3_crypto_trading"
+  mlflow_tracking_uri: "mlruns"
+  progress_log_every_steps: 10000
+  max_folds: 2
+
+# ──────────────────────────────────────────────
+# Backtesting
+# ──────────────────────────────────────────────
+backtesting:
+  benchmark: "BTC/USDT"
+
+# ──────────────────────────────────────────────
+# Deployment
+# ──────────────────────────────────────────────
+deployment:
+  poll_interval_seconds: 300   # 5m candle
+  model_path: "models/td3_best.zip"

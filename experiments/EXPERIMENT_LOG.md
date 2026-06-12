@@ -7,6 +7,50 @@ Aktueller Champion: **EXP-007 (mean val Sharpe −0.85)** — wie EXP-005, train
 
 ---
 
+## EXP-009 — 2026-06-12 — Turnover-Penalty gesenkt (turnover_penalty_coef 0.004 → 0.001)
+**Hypothese:** EXP-008 zeigte: unter `scaled` geht der edge-lose Agent in ~all-cash, weil der
+  aggressiv getunte Turnover-Penalty (optimiert als Cash noch UNMÖGLICH war) jetzt die Inaktivität
+  belohnt. Senkung 0.004 → 0.001 (4×) soll den Teilnahme-Anreiz wiederherstellen (0.001 > 0, Kosten
+  bleiben im Gradienten sichtbar) und die entscheidende Diagnose liefern: ist `scaled` ein echter
+  Edge oder nur eine teure Art, Cash zu halten? Zweiseitiges Kill-Kriterium vorab registriert.
+**Änderung:** environment.turnover_penalty_coef: 0.004 → 0.001   (Basis: EXP-008 `scaled`)
+**Basis:** Commit 052c466, data_fingerprint `ec2e07548f555da2` (STRUKTURELL/Code, `scaled`-Linie wie
+  EXP-008 — NICHT auf der Execution-Achse mit EXP-001..007 gepaart. Vergleichs-Caveats wie EXP-008:
+  Budget 200k vs Champion-Headline 400k (EXP-007) UND geänderte Execution-Semantik (scaled vs
+  renormalize) → Headline-Vergleich nur indikativ).
+**Budget:** 200k Steps × 2 Seeds × 2 Folds
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **+2.84** (std 2.89) | MaxDD **0.024** | CPR 1.002
+  Pro Fold: S42 F0 **+8.89** (CPR 1.030, MaxDD 0.006) / F1 +2.58 (CPR 1.006, MaxDD 0.008)
+            S123 F0 +3.35 (CPR 1.011, MaxDD 0.012) / F1 **−3.46** (CPR 0.961, MaxDD 0.072)
+  3 von 4 Folds profitabel; fold_1-Seed-Instabilität bleibt (S42 +2.58 vs S123 −3.46).
+**Entscheidung:** ❌ ABGELEHNT — **Kill-Kriterium (b) STILL-CASH (vorab registriert) FEUERT.** Der
+  4×-Penalty-Schnitt hob die Teilnahme nur um Rausch-Beträge: `perf/cash_ratio_mean` 0.969/0.876
+  (EXP-008) → **0.932/0.893** (EXP-009, beide > 0.85), `perf/n_trades` 10/10 → **12/9** (einstellig),
+  netto investiert ~3–12% → ~7–11%. `actions/mean` blieb über alle 200k Steps in BEIDEN Seeds bei
+  ~0.00 gepinnt (gleicher konvergierter Attraktor wie EXP-008), `actions/std` ~0.918, critic_loss → 0
+  = konvergiert, NICHT untertrainiert. Der +2.84 ist ein Geldmarktfonds-Artefakt: profit_factor 16–140
+  und win_rate 0.75–0.78 auf nur 9–12 Trades; der S123/F1 −3.46 ist EIN adverser Move (total_return
+  −3.9%, reward_skew −40) auf einer winzigen, undiversifizierten Position. total_cost 36/29 vs Champion-
+  Kette ~960 → Kill (a) RE-CHURN feuert NICHT. Headline +2.84 schlägt zwar numerisch −0.80, aber das
+  Kill-Kriterium übersteuert (Artefakt + doppelte Vergleichs-Caveats). **Champion bleibt EXP-007.
+  `scaled` wird als Struktur-Basis beibehalten.**
+**Modelle:** `models/exp_009/`
+**MLflow:** Runs `seed_42` (d9ae7743), `seed_123` (d61436e1), Experiment `td3_crypto_trading`
+**Learnings:** **Der Turnover-Penalty war NIE der bindende Constraint auf Teilnahme — die edge-lose
+  Reward-Landschaft ist es.** Bei fehlendem Direktions-Edge (win_rate ~0.5, Timing Münzwurf, bestätigt
+  EXP-001..006) plus positiven Kosten IST Cash-Halten die Sharpe-/Return-maximale Politik, unabhängig
+  vom Penalty-Niveau. Der `scaled`-Mechanik fehlt nicht der Anreiz, sondern dem Agenten der GRUND zu
+  investieren. Damit ist die Kosten-Achse endgültig erschöpft (EXP-002..005 + EXP-008/009). **Verzweigung
+  → EXP-010 (pre-registriert): Signal/Observation-Branch.** Cross-Sectional-Momentum ON, aber mit
+  TREND-Horizont `momentum_window 12 → 48` (~4h statt 1h-Microstructure-Noise von EXP-006), auf der
+  `scaled`-Basis wo Cash eine echte Option ist — gibt dem Actor das fehlende Relative-Stärke-Ranking,
+  um Kapital SELEKTIV auf Cross-Sectional-Gewinner zu lenken. Wenn auch das nicht teilnimmt → Policy/
+  Algorithmus-Branch (net_arch / SAC). Anmerkung: `perf/*` weiter ohne `step=` → Endwert = fold_1-
+  Snapshot (fold_0 nicht direkt beobachtbar).
+
+---
+
 ## EXP-008 — 2026-06-12 — Cash-fähige Allokation (allocation_mode "renormalize" → "scaled")
 **Hypothese:** EXP-007 fand die Wurzelursache: `compute_target_holdings` renormalisiert über
   `sum` → in JEDEM Experiment war das Portfolio zwangs-zu-~100%-investiert, ~0% Cash. Ein fester
