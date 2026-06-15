@@ -13,6 +13,7 @@ from src.pipelines.training.nodes import (
     TrainingProgressCallback,
     aggregate_fold_metrics,
     aggregate_seed_results,
+    create_sac_agent,
     create_td3_agent,
     create_training_callback,
     generate_rolling_cv_folds,
@@ -128,6 +129,7 @@ class TestCreateTd3Agent:
         from src.utils.config import LearningRateConfig
 
         td3_config = TD3Config(
+            algorithm="td3",
             learning_rate=LearningRateConfig(actor=0.0001, critic=0.0003),
             lr_schedule="linear",
             gamma=0.99,
@@ -149,6 +151,90 @@ class TestCreateTd3Agent:
         agent = create_td3_agent(env, td3_config, seed=42)
         assert isinstance(agent, TD3)
         assert agent.action_noise is not None
+
+
+class TestCreateSacAgent:
+    def _make_env(self):  # noqa: ANN201
+        """Create a minimal two-asset TradingEnv for SAC construction tests."""
+        from src.environments.trading_env import TradingEnv
+
+        data = _make_cv_data(months=6, symbols=["A/USDT", "B/USDT"])
+        return TradingEnv(
+            data=data,
+            symbols=["A/USDT", "B/USDT"],
+            initial_balance=10000.0,
+            trading_fee_pct=0.001,
+            slippage_pct=0.0005,
+            window_size=10,
+            reward_scaling=1.0,
+            max_position=1.0,
+        )
+
+    def _make_config(self):  # noqa: ANN201
+        from src.utils.config import LearningRateConfig, NetArchConfig, TD3Config
+
+        return TD3Config(
+            algorithm="sac",
+            learning_rate=LearningRateConfig(actor=0.0001, critic=0.0003),
+            lr_schedule="linear",
+            gamma=0.99,
+            tau=0.005,
+            batch_size=64,
+            buffer_size=1000,
+            learning_starts=100,
+            train_freq=1,
+            policy_delay=2,
+            target_noise_clip=0.5,
+            target_policy_noise=0.2,
+            action_noise_std=0.1,
+            total_timesteps=100,
+            net_arch=NetArchConfig(pi=[64, 64], qf=[64, 64]),
+        )
+
+    def test_returns_sac_instance(self) -> None:
+        """create_sac_agent must return a SAC instance."""
+        from stable_baselines3 import SAC
+
+        env = self._make_env()
+        config = self._make_config()
+        agent = create_sac_agent(env, config, seed=42)
+        assert isinstance(agent, SAC)
+
+    def test_predict_returns_finite_actions_in_range(self) -> None:
+        """Deterministic predict() must return finite actions in [-1, 1]."""
+        env = self._make_env()
+        config = self._make_config()
+        agent = create_sac_agent(env, config, seed=42)
+
+        obs, _ = env.reset()
+        action, _ = agent.predict(obs, deterministic=True)
+
+        assert action.shape == env.action_space.shape
+        assert np.all(np.isfinite(action)), "Action contains non-finite values"
+        assert np.all(action >= -1.0) and np.all(action <= 1.0), (
+            f"Action out of [-1, 1]: {action}"
+        )
+
+    def test_net_arch_applied(self) -> None:
+        """The SAC actor must use the pi net_arch from config."""
+        env = self._make_env()
+        config = self._make_config()
+        agent = create_sac_agent(env, config, seed=42)
+
+        # SAC's actor network latent_pi layers should match the net_arch.
+        layer_sizes = [
+            layer.out_features
+            for layer in agent.actor.latent_pi
+            if hasattr(layer, "out_features")
+        ]
+        assert layer_sizes == [64, 64]
+
+    def test_no_action_noise(self) -> None:
+        """SAC agent must have no explicit action noise (entropy replaces it)."""
+        env = self._make_env()
+        config = self._make_config()
+        agent = create_sac_agent(env, config, seed=42)
+        assert agent.action_noise is None
 
 
 class TestAggregateSeedResults:

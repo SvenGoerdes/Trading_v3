@@ -582,6 +582,39 @@ class TestComputeDataFingerprint:
         assert all(c in "0123456789abcdef" for c in fp)
 
 
+class TestAlgorithmConfig:
+    """Tests for the algorithm field in TD3Config."""
+
+    def test_algorithm_defaults_to_td3_when_absent(self, valid_yaml: Path) -> None:
+        """algorithm defaults to 'td3' when the key is absent from YAML."""
+        raw = load_yaml(valid_yaml)
+        assert "algorithm" not in raw["td3"]
+        config = parse_config(raw)
+        assert config.td3.algorithm == "td3"
+
+    def test_algorithm_parses_sac_when_present(self, valid_yaml: Path) -> None:
+        """algorithm='sac' is correctly parsed when present in YAML."""
+        raw = load_yaml(valid_yaml)
+        raw["td3"]["algorithm"] = "sac"
+        config = parse_config(raw)
+        assert config.td3.algorithm == "sac"
+
+    def test_algorithm_parses_td3_when_explicit(self, valid_yaml: Path) -> None:
+        """algorithm='td3' is correctly parsed when explicitly set."""
+        raw = load_yaml(valid_yaml)
+        raw["td3"]["algorithm"] = "td3"
+        config = parse_config(raw)
+        assert config.td3.algorithm == "td3"
+
+    def test_algorithm_immutable(self, valid_yaml: Path) -> None:
+        """algorithm field must be immutable (frozen dataclass)."""
+        from dataclasses import FrozenInstanceError
+
+        config = parse_config(load_yaml(valid_yaml))
+        with pytest.raises(FrozenInstanceError):
+            config.td3.algorithm = "sac"  # type: ignore[misc]
+
+
 class TestAllocationModeConfig:
     """Tests for allocation_mode field in EnvironmentConfig."""
 

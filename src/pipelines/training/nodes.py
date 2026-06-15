@@ -16,7 +16,7 @@ import mlflow
 import numpy as np
 import torch
 from pandas import DataFrame, Timestamp
-from stable_baselines3 import TD3
+from stable_baselines3 import SAC, TD3
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.utils import update_learning_rate
@@ -390,6 +390,98 @@ def create_td3_agent(
                 "qf": td3_config.net_arch.qf,
             }
         },
+        device=device,
+        seed=seed,
+        verbose=0,
+    )
+
+
+def create_sac_agent(
+    env: TradingEnv,
+    td3_config: TD3Config,
+    seed: int,
+) -> SAC:
+    """Create a SAC agent with specified configuration.
+
+    Mirrors create_td3_agent but uses SAC (Soft Actor-Critic). Applies the
+    same decoupled actor/critic LR + lr_schedule pattern via a CustomSAC
+    subclass. The entropy temperature optimizer is left on SB3's default
+    schedule (do NOT apply a custom multiplier to it).
+
+    Args:
+        env: The Gymnasium trading environment.
+        td3_config: Algorithm hyperparameter configuration (TD3-only keys
+            like policy_delay and action_noise_std are ignored by SAC).
+        seed: Random seed for the agent.
+
+    Returns:
+        Configured SAC agent.
+    """
+    device = get_torch_device()
+    logger.info("Creating SAC agent on device=%s", device)
+
+    class CustomSAC(SAC):
+        def __init__(
+            self,
+            *args,
+            custom_lr_actor: float,
+            custom_lr_critic: float,
+            lr_schedule_type: str,
+            **kwargs,
+        ):
+            # Pass a dummy learning rate to the parent class.
+            super().__init__(*args, learning_rate=1e-3, **kwargs)
+            self.custom_lr_actor = custom_lr_actor
+            self.custom_lr_critic = custom_lr_critic
+            self.lr_schedule_type = lr_schedule_type
+
+            # _setup_model() initializes the optimizers.
+            # Apply the correct learning rate immediately.
+            if self.actor is not None and self.critic is not None:
+                self._update_learning_rate([self.actor.optimizer, self.critic.optimizer])
+
+        def _get_lr_multiplier(self) -> float:
+            progress = self._current_progress_remaining  # 1.0 (start) → 0.0 (end)
+            if self.lr_schedule_type == "linear":
+                return progress
+            elif self.lr_schedule_type == "cosine":
+                return 0.5 * (1.0 + math.cos(math.pi * (1.0 - progress)))
+            else:
+                return 1.0  # constant
+
+        def _update_learning_rate(self, optimizers) -> None:
+            multiplier = self._get_lr_multiplier()
+            actor_lr = self.custom_lr_actor * multiplier
+            critic_lr = self.custom_lr_critic * multiplier
+
+            # Log custom learning rates to tensorboard / logger.
+            try:
+                if getattr(self, "logger", None) is not None:
+                    self.logger.record("train/learning_rate_actor", actor_lr)
+                    self.logger.record("train/learning_rate_critic", critic_lr)
+            except AttributeError:
+                pass
+
+            # Only update actor and critic — never touch ent_coef_optimizer.
+            update_learning_rate(self.actor.optimizer, actor_lr)
+            update_learning_rate(self.critic.optimizer, critic_lr)
+
+    return CustomSAC(
+        policy="MlpPolicy",
+        env=env,
+        custom_lr_actor=td3_config.learning_rate.actor,
+        custom_lr_critic=td3_config.learning_rate.critic,
+        lr_schedule_type=td3_config.lr_schedule,
+        gamma=td3_config.gamma,
+        tau=td3_config.tau,
+        batch_size=td3_config.batch_size,
+        buffer_size=td3_config.buffer_size,
+        learning_starts=td3_config.learning_starts,
+        train_freq=td3_config.train_freq,
+        gradient_steps=td3_config.train_freq,
+        ent_coef="auto",
+        target_update_interval=1,
+        policy_kwargs={"net_arch": td3_config.net_arch.pi},
         device=device,
         seed=seed,
         verbose=0,

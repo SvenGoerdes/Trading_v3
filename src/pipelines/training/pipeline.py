@@ -27,6 +27,7 @@ from .callbacks import MLflowDiagnosticsCallback
 from .evaluation import run_full_evaluation
 from .nodes import (
     aggregate_seed_results,
+    create_sac_agent,
     create_td3_agent,
     create_trading_env,
     create_training_callback,
@@ -233,7 +234,8 @@ def _load_train_data(splits_dir: str, symbols: list[str]) -> dict[str, pd.DataFr
 def _flatten_config_params(config) -> dict[str, str]:
     """Flatten config into a flat dict for MLflow param logging."""
     return {
-        # TD3 hyperparameters
+        # Algorithm and TD3 hyperparameters
+        "algorithm": config.td3.algorithm,
         "lr_actor": str(config.td3.learning_rate.actor),
         "lr_critic": str(config.td3.learning_rate.critic),
         "lr_schedule": config.td3.lr_schedule,
@@ -396,8 +398,10 @@ def run() -> None:
                     config.environment,
                 )
 
-                # Create agent and callbacks
-                agent = create_td3_agent(train_env, config.td3, seed)
+                # Create agent and callbacks — dispatch on configured algorithm.
+                agent = (
+                    create_sac_agent if config.td3.algorithm == "sac" else create_td3_agent
+                )(train_env, config.td3, seed)
                 progress_callback = create_training_callback(
                     total_timesteps=config.td3.total_timesteps,
                     seed=seed,

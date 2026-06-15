@@ -85,6 +85,7 @@ class LearningRateConfig:
 
 @dataclass(frozen=True)
 class TD3Config:
+    algorithm: str
     learning_rate: LearningRateConfig
     lr_schedule: str
     gamma: float
@@ -202,6 +203,7 @@ def parse_config(raw: dict) -> AppConfig:
             n_cv_folds=raw["split"]["n_cv_folds"],
         ),
         td3=TD3Config(
+            algorithm=raw["td3"].get("algorithm", "td3"),
             learning_rate=LearningRateConfig(
                 actor=raw["td3"]["learning_rate"]["actor"],
                 critic=raw["td3"]["learning_rate"]["critic"],
