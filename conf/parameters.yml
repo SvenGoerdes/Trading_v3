@@ -13,7 +13,7 @@ symbols:
   - LTC/USDT
   - NEAR/USDT
 
-timeframe: "5m"
+timeframe: "1h"
 
 # ──────────────────────────────────────────────
 # Portfolio
