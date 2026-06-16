@@ -3,7 +3,55 @@
 Journal aller Experimente des autonomen Optimierungs-Loops. Regeln: siehe [PROTOCOL.md](PROTOCOL.md).
 Maschinenlesbare Version: [ledger.jsonl](ledger.jsonl). Modelle: `models/<exp_id>/` (nie überschrieben).
 
-Aktueller Champion: **EXP-007 (mean val Sharpe −0.85)** — wie EXP-005, trainiert mit 400k Steps
+Champion **5m-Kette** (fp ec2e07548f555da2): **EXP-007 (mean val Sharpe −0.85)** — EXP-005-Config, 400k Steps
+Champion **1h-Kette** (fp b279adaf24c6ed85): **EXP-013 (mean val Sharpe −2.33)** — 1h-Baseline, renormalize
+> ACHTUNG: Die beiden Ketten haben unterschiedliche data_fingerprints (5m vs 1h) → Sharpe-Werte NICHT
+> direkt vergleichbar. Innerhalb jeder Kette gilt der jeweilige Champion. 5m-RL-Raum erschöpft (12 Exp,
+> TD3+SAC); 1h-Kette ab EXP-013 offen.
+
+---
+
+## EXP-013 — 2026-06-16 — DATEN-ACHSE: 1h-Baseline (Champion EXP-007 Env-Block @ 1h)
+**Hypothese:** — (Baseline-Etablierung der NEUEN 1h-Daten-Achse, eine Änderung vs EXP-007:
+  Timeframe 5m → 1h). Ehrliche Edge-Sonde: renormalize (Zwang ~Vollinvestition) KANN kein Cash
+  halten, daher liest die 1h-Val-Sharpe direkt ab, ob ein vollinvestierter Agent bei ~12× geringerem
+  Kosten-Drag am 1h-Horizont einen Direktions-Edge findet.
+**Änderung:** timeframe: "5m" → "1h"   (Basis: Champion EXP-007 Env-Block, 200k Screening-Budget)
+**Basis:** Commit 85ff837, data_fingerprint `b279adaf24c6ed85` (NEUER Fingerprint — NICHT mit
+  EXP-001..012 gepaart; die 5m-Kette nutzte `ec2e07548f555da2`. EXP-013 IST der 1h-Referenzpunkt.
+  Annualisierung timeframe-korrekt: periods_per_year 8760 (1h) statt 105120 (5m) → Sharpe-Zahlen im
+  MEANING vergleichbar zu den 5m-Sharpes, aber NICHT gepaart).
+**Budget:** 200k Steps × 2 Seeds × 2 Folds (~1489 train / ~721 val Candles/Fold — 4-Datenpunkt-Readout
+  noch verrauschter als bei 5m, Schwelle mit Vorsicht anwenden)
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **−2.33** (std 0.29) | MaxDD **0.246** | CPR 0.876
+  Pro Fold: S42 F0 **−1.84** (CPR 0.936, MaxDD 0.177) / F1 **−3.40** (CPR 0.788, MaxDD 0.329)
+            S123 F0 **−0.51** (CPR 0.980, MaxDD 0.172) / F1 **−3.58** (CPR 0.800, MaxDD 0.306)
+  ALLE 4 Folds negativ; fold_1 (Down-Markt) deutlich schlechter als fold_0 auf beiden Seeds —
+  dieselbe Regime-Asymmetrie wie am 5m-Horizont.
+**Entscheidung:** ⭐ CHAMPION (1h-Baseline) — Referenz für die gesamte 1h-Kette, per Definition
+  (analog zu EXP-001 für die 5m-Kette). Kein Crash/NaN, deterministisch, beide Seeds vollständig.
+  Der 1h-Pivot ist KEIN Totalausfall: −2.33 / MaxDD 0.246 ist deutlich gesünder als die 5m-renormalize-
+  Baseline EXP-001 (−9.08 / MaxDD 0.62), die Kosten-Pathologie ist weg.
+**Modelle:** `models/exp_013/`
+**MLflow:** Runs `seed_42` (8c0647a4), `seed_123` (4abc2cfb), Experiment `td3_crypto_trading`
+**Learnings — DEKOMPOSITION:**
+  **(1) ECHTE, vollinvestierte Verluste — KEIN Near-Cash-Artefakt.** `perf/cash_ratio_mean`
+  **0.020 (S42) / 0.173 (S123)**, cash_min 0.0 → Buch zu ~98 %/~83 % deployed. Per-Asset-Action-Means
+  0.27–0.95 (alle long). Der Agent IST im Markt.
+  **(2) Der Verlust ist BRUTTO/DIREKTIONAL, NICHT Kosten.** `perf/total_cost` **33 / 122** auf
+  **7 / 38 Trades** — vs ~5160 Kosten / ~41k Trades bei der 5m-renormalize-Baseline EXP-001 (Kosten-Drag
+  ~12× geringer, wie erwartet). TROTZDEM total_return **−21.2 % / −20.0 %**. Nach Abzug der trivialen
+  Kosten verliert der Agent weiter ~20 % → KEIN Long-Edge am 1h-Horizont.
+  **(3) Kein Direktions-Skill.** win_rate 0.14/0.29, profit_factor 0.13/0.17, SMA-Timing 20–50 %
+  (Münzwurf) — gleiche edge-lose Signatur wie alle 12 5m-Experimente.
+  **(4) Konvergiert, NICHT untertrainiert.** critic_loss 1e-4 → ~1.3e-6, flach ab ~105k.
+  **STRATEGISCHER SCHLUSS:** Bei 1h mit ~12× geringerem Kosten-Drag verliert ein vollinvestierter Agent
+  IMMER NOCH ~20 % auf Down-Markt-Folds → Failure-Mode = brutto/direktional MIT fehlendem Cash-Ausweg
+  unter renormalize. **Verzweigung → EXP-014: allocation_mode renormalize → scaled.** Anders als bei 5m
+  (EXP-008, wo scaled ein KOSTEN-Problem umging → All-Cash-Artefakt) kauft der Cash-Ausweg bei 1h nichts
+  auf der Kosten-Achse — er kann sich nur als echtes Drawdown-Vermeiden auf Down-Markt-Folds verdienen
+  (Risikomanagement, auch ohne Long-Edge wertvoll). Zweiseitiges Kill-Kriterium in EXP-014 vorab registriert.
 
 ---
 
