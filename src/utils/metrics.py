@@ -16,18 +16,54 @@ logger = get_logger(__name__)
 # 5-minute candles: 12 per hour * 24 hours * 365 days
 ANNUALIZATION_FACTOR_5MIN = np.sqrt(365 * 24 * 12)
 
+# Unit map in milliseconds — duplicated from data_engineering/nodes.py to avoid
+# cross-pipeline imports. Keep in sync if new timeframe units are added.
+_TIMEFRAME_UNIT_MS: dict[str, int] = {
+    "m": 60_000,
+    "h": 3_600_000,
+    "d": 86_400_000,
+}
+
+_MS_PER_YEAR: int = 365 * 24 * 60 * 60 * 1000
+
+
+def periods_per_year_for_timeframe(timeframe: str) -> int:
+    """Return the number of candles per calendar year for a given timeframe.
+
+    Formula: (milliseconds per year) / (milliseconds per candle).
+
+    Args:
+        timeframe: ccxt candle interval string, e.g. ``"5m"``, ``"1h"``, ``"1d"``.
+
+    Returns:
+        Integer number of candle periods per calendar year.
+        Examples: ``"5m"`` → 105120, ``"1h"`` → 8760, ``"1d"`` → 365.
+
+    Raises:
+        ValueError: If the timeframe unit is not one of ``m``, ``h``, ``d``.
+    """
+    unit = timeframe[-1]
+    amount = int(timeframe[:-1])
+    if unit not in _TIMEFRAME_UNIT_MS:
+        raise ValueError(f"Unknown timeframe unit '{unit}' in '{timeframe}'")
+    candle_ms = amount * _TIMEFRAME_UNIT_MS[unit]
+    return int(_MS_PER_YEAR / candle_ms)
+
 
 def compute_sharpe_ratio(
     portfolio_values: NDArray[np.float64],
     risk_free_rate: float = 0.0,
+    periods_per_year: int = 105120,
 ) -> float:
     """Compute annualized Sharpe ratio from portfolio value series.
 
-    Uses log returns annualized for 5-minute candle frequency.
+    Uses log returns annualized by the given candle frequency.
 
     Args:
         portfolio_values: Array of portfolio values over time.
         risk_free_rate: Risk-free rate per period (default 0).
+        periods_per_year: Number of candles per calendar year used for
+            annualization (default 105120 = 5-minute candles).
 
     Returns:
         Annualized Sharpe ratio. Returns 0.0 if std of returns is zero
@@ -47,7 +83,7 @@ def compute_sharpe_ratio(
         return 0.0
 
     mean_return = float(np.mean(excess_returns))
-    return mean_return / std * float(ANNUALIZATION_FACTOR_5MIN)
+    return mean_return / std * np.sqrt(periods_per_year)
 
 
 def compute_cumulative_profit_ratio(
@@ -88,6 +124,7 @@ def compute_max_drawdown(
 def compute_sortino_ratio(
     portfolio_values: NDArray[np.float64],
     risk_free_rate: float = 0.0,
+    periods_per_year: int = 105120,
 ) -> float:
     """Compute annualized Sortino ratio from portfolio value series.
 
@@ -96,6 +133,8 @@ def compute_sortino_ratio(
     Args:
         portfolio_values: Array of portfolio values over time.
         risk_free_rate: Risk-free rate per period (default 0).
+        periods_per_year: Number of candles per calendar year used for
+            annualization (default 105120 = 5-minute candles).
 
     Returns:
         Annualized Sortino ratio. Returns 0.0 if downside std is zero
@@ -119,16 +158,19 @@ def compute_sortino_ratio(
         return 0.0
 
     mean_return = float(np.mean(excess_returns))
-    return mean_return / downside_std * float(ANNUALIZATION_FACTOR_5MIN)
+    return mean_return / downside_std * np.sqrt(periods_per_year)
 
 
 def compute_calmar_ratio(
     portfolio_values: NDArray[np.float64],
+    periods_per_year: int = 105120,
 ) -> float:
     """Compute Calmar ratio: annualized return / max drawdown.
 
     Args:
         portfolio_values: Array of portfolio values over time.
+        periods_per_year: Number of candles per calendar year used for
+            annualization (default 105120 = 5-minute candles).
 
     Returns:
         Calmar ratio. Returns 0.0 if max drawdown is zero or data too short.
@@ -142,8 +184,6 @@ def compute_calmar_ratio(
 
     total_return = portfolio_values[-1] / portfolio_values[0] - 1.0
     n_periods = len(portfolio_values) - 1
-    # Annualize: periods per year for 5-min candles = 365 * 24 * 12
-    periods_per_year = 365 * 24 * 12
     annualized_return = total_return * (periods_per_year / n_periods)
 
     if not np.isfinite(annualized_return):

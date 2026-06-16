@@ -47,12 +47,23 @@ class TradingMetricsLogger:
     Args:
         symbols: List of traded symbol names.
         initial_balance: Starting cash balance.
+        periods_per_year: Number of candle periods per calendar year used for
+            annualizing Sharpe, Sortino, and Calmar ratios.
+            Default 105120 matches the 5-minute candle frequency.
+            Use ``periods_per_year_for_timeframe(config.timeframe)`` to derive
+            this from the configured timeframe automatically.
     """
 
-    def __init__(self, symbols: list[str], initial_balance: float) -> None:
+    def __init__(
+        self,
+        symbols: list[str],
+        initial_balance: float,
+        periods_per_year: int = 105120,
+    ) -> None:
         self.symbols = symbols
         self.n_assets = len(symbols)
         self.initial_balance = initial_balance
+        self.periods_per_year = periods_per_year
 
     # ── Layer 1: Training Diagnostics ──────────────────────────────────
 
@@ -147,9 +158,9 @@ class TradingMetricsLogger:
         cash_ratio_min = float(np.min(cash_ratios)) if len(cash_ratios) > 0 else 0.0
 
         metrics = {
-            "perf/sharpe_ratio": compute_sharpe_ratio(pv),
-            "perf/sortino_ratio": compute_sortino_ratio(pv),
-            "perf/calmar_ratio": compute_calmar_ratio(pv),
+            "perf/sharpe_ratio": compute_sharpe_ratio(pv, periods_per_year=self.periods_per_year),
+            "perf/sortino_ratio": compute_sortino_ratio(pv, periods_per_year=self.periods_per_year),
+            "perf/calmar_ratio": compute_calmar_ratio(pv, periods_per_year=self.periods_per_year),
             "perf/max_drawdown": compute_max_drawdown(pv),
             "perf/max_drawdown_duration": float(compute_max_drawdown_duration(pv)),
             "perf/cpr": compute_cumulative_profit_ratio(pv),
@@ -473,7 +484,7 @@ class TradingMetricsLogger:
             # Get PV subset for this regime (use indices)
             indices = np.where(mask)[0]
             regime_pv = pv[indices]
-            regime_sharpe = compute_sharpe_ratio(regime_pv)
+            regime_sharpe = compute_sharpe_ratio(regime_pv, periods_per_year=self.periods_per_year)
 
             mlflow.log_metric(f"regime/{regime}_sharpe", regime_sharpe)
             mlflow.log_metric(f"regime/{regime}_n_steps", float(count))

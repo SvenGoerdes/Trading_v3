@@ -430,3 +430,29 @@ class TestMLflowDiagnosticsCallback:
         callback = MLflowDiagnosticsCallback(metrics_logger=logger)
         assert callback.diagnostics_step_interval == 1000
         assert callback.buffer_log_interval == 10000
+
+
+# ── TradingMetricsLogger periods_per_year Tests ──────────────────────
+
+
+class TestTradingMetricsLoggerPeriodsPerYear:
+    """Verify periods_per_year is stored correctly with default and explicit values."""
+
+    def test_default_periods_per_year_is_5min(self) -> None:
+        """Instantiating without periods_per_year must default to 5-minute frequency.
+
+        5-minute candles: 365 * 24 * 12 = 105_120 periods per year.
+        """
+        from src.utils.mlflow_metrics import TradingMetricsLogger
+
+        logger = TradingMetricsLogger(symbols=["BTC/USDT"], initial_balance=10000.0)
+        assert logger.periods_per_year == 105120
+
+    def test_explicit_periods_per_year_stored(self) -> None:
+        """Explicit periods_per_year value must be stored as-is."""
+        from src.utils.mlflow_metrics import TradingMetricsLogger
+
+        logger = TradingMetricsLogger(
+            symbols=["BTC/USDT"], initial_balance=10000.0, periods_per_year=8760
+        )
+        assert logger.periods_per_year == 8760

@@ -21,6 +21,7 @@ from stable_baselines3.common.callbacks import CallbackList
 
 from src.utils.config import DEFAULT_CONFIG_PATH, get_config
 from src.utils.logger import get_logger
+from src.utils.metrics import periods_per_year_for_timeframe
 from src.utils.mlflow_metrics import TradingMetricsLogger
 
 from .callbacks import MLflowDiagnosticsCallback
@@ -412,6 +413,7 @@ def run() -> None:
                 metrics_logger = TradingMetricsLogger(
                     symbols=symbols,
                     initial_balance=config.initial_balance,
+                    periods_per_year=periods_per_year_for_timeframe(config.timeframe),
                 )
                 diagnostics_callback = MLflowDiagnosticsCallback(
                     metrics_logger=metrics_logger,
@@ -424,7 +426,9 @@ def run() -> None:
                 )
 
                 # Evaluate on validation set (basic metrics for fold comparison)
-                metrics = evaluate_agent(agent, val_env)
+                metrics = evaluate_agent(
+                    agent, val_env, periods_per_year=periods_per_year_for_timeframe(config.timeframe)
+                )
                 fold_metrics.append(metrics)
                 logger.info("Fold %d metrics: %s", fold_idx, metrics)
 
@@ -505,6 +509,7 @@ def run() -> None:
                 eval_metrics_logger = TradingMetricsLogger(
                     symbols=symbols,
                     initial_balance=config.initial_balance,
+                    periods_per_year=periods_per_year_for_timeframe(config.timeframe),
                 )
                 # Build price_data dict for timing/regime analysis
                 price_data = {

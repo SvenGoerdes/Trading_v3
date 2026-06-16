@@ -491,12 +491,15 @@ def create_sac_agent(
 def evaluate_agent(
     agent: TD3,
     env: TradingEnv,
+    periods_per_year: int = 105120,
 ) -> dict[str, float]:
     """Run a full deterministic episode and compute metrics.
 
     Args:
         agent: Trained TD3 agent.
         env: Evaluation environment.
+        periods_per_year: Number of candle periods per calendar year used for
+            annualizing the Sharpe ratio (default 105120 = 5-minute candles).
 
     Returns:
         Dict with sharpe_ratio, cpr, max_drawdown keys.
@@ -514,7 +517,7 @@ def evaluate_agent(
     pv_array = np.array(portfolio_values, dtype=np.float64)
 
     return {
-        "sharpe_ratio": compute_sharpe_ratio(pv_array),
+        "sharpe_ratio": compute_sharpe_ratio(pv_array, periods_per_year=periods_per_year),
         "cpr": compute_cumulative_profit_ratio(pv_array),
         "max_drawdown": compute_max_drawdown(pv_array),
     }
