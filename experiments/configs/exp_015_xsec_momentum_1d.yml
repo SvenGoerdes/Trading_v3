@@ -1,0 +1,178 @@
+# ============================================================================
+# EXP-015 — 1h SIGNAL: cross_sectional_momentum ON, 1-day trend horizon
+# ============================================================================
+# 1h CHAIN, third experiment. Base = EXP-014 (the NEW 1h champion: scaled cash
+# mechanic, genuine partial risk management — cash_ratio ~0.51 in the down-market
+# fold, NOT the 5m all-cash artifact). data_fingerprint b279adaf24c6ed85 (PAIRED
+# with EXP-013/EXP-014, NOT with the 5m chain). Judged against EXP-014 only.
+#
+# THE ONE CHANGE vs EXP-014: environment.cross_sectional_momentum false -> true
+# (with momentum_window 12 -> 24 = 1 trading day at 1h). Everything else identical
+# to the EXP-014 champion (scaled, turnover 0.004, band 0.10, TD3).
+#
+# HYPOTHESIS — attacks the FAILURE MODE that has survived all 14 experiments:
+# NO DIRECTIONAL EDGE. EXP-014 proved the agent now MANAGES RISK (de-risks 98%->51%
+# invested into the fold_1 selloff, halving drawdown 0.246->0.105) but it still has
+# no reason to pick WINNERS — all 4 folds remain negative, win_rate 0.57-0.63 is
+# coin-flip, total_return -9% to -11% in the down fold. Every TI in the observation
+# is rolling-z-scored PER ASSET, so the agent never sees the CROSS-SECTIONAL relative
+# strength (asset X vs the other 9). A momentum feature z-scored ACROSS the 10 assets
+# gives the actor the one signal it has never had: a relative-strength ranking to
+# differentiate winners from losers. Now that scaled gives cash a real cost (the
+# agent demonstrably uses it) AND the agent participates ~50% (not the 5m ~10%),
+# the conditions to USE such a ranking finally exist — unlike EXP-006/010 at 5m,
+# where the agent was either churning edge-lessly or sitting ~90% in cash.
+#
+# WHY momentum_window 24 (not 12 or 48):
+#  - At 1h, 24 bars = exactly 1 calendar day = a trend horizon long enough to filter
+#    intrabar microstructure noise (the 5m EXP-006 window-12 failure mode) but short
+#    enough to adapt within the ~30-day validation fold (~721 candles).
+#  - 5m EXP-010 tried window 48 = 4h at 5m = far too short to be a trend signal;
+#    that conflation is why its "trend horizon" framing never produced concentration.
+#    Here 24*1h = 24h is a genuine daily-momentum signal, the canonical crypto
+#    cross-sectional momentum horizon.
+#
+# WHY THIS IS A DIFFERENT EXPERIMENT FROM 5m EXP-006/010 (which both failed NO-LIFT):
+#  - DATA AXIS: 1h, not 5m. The 5m momentum tests ran on a cost-poisoned (EXP-006,
+#    renormalize) or all-cash (EXP-010, ~90% cash) substrate where the actor had no
+#    working participation to express a ranking through. EXP-014 establishes a
+#    substrate that DOES participate (~50%) and DOES discriminate regimes.
+#  - The signal-branch question is finally clean: given a risk-managing agent that
+#    uses cash, does a cross-sectional ranking let it tilt toward winners?
+#
+# PRE-REGISTERED TWO-SIDED READOUT (decide before looking at headline Sharpe):
+#  (a) NO-LIFT / NO-CONCENTRATION: per-asset trade HHI stays ~0.10 (uniform, 1/10)
+#      AND win_rate stays ~0.5 AND mean Sharpe does not clear EXP-014 -1.83 by >0.05
+#      -> the cross-sectional signal is non-predictive at 1h too; the missing piece
+#      is not the OBSERVATION. This would be the 1h confirmation of the 5m signal-
+#      branch result -> REJECT, escalate: the no-edge conclusion now spans BOTH
+#      timeframes on BOTH the renormalize and scaled substrates + the signal lever
+#      -> recommend formal no-edge for RL-on-TI and a structural rethink (different
+#      features / supervised edge model / different universe), NOT more RL tuning.
+#  (b) GENUINE SIGNAL: trade HHI materially > 0.10 (winner concentration) AND/OR
+#      win_rate lifts off 0.5 AND mean Sharpe clears EXP-014 -1.83 by >0.05 with
+#      MaxDD not >20% worse than 0.105 -> the agent finally has and uses a directional
+#      edge -> ADOPT (or "promising -> confirm at bigger budget" if the 4-datapoint
+#      readout is marginal).
+#
+# NOTE: cross_sectional_momentum=true EXTENDS the observation vector by n_assets, so
+# this is a STRUCTURAL/observation change (obs-dim shift) — it is NOT paired with
+# EXP-014 on the observation axis; it is a fresh structural baseline for the 1h
+# signal branch (same caveat the 5m chain logged for EXP-006/010). Headline vs
+# EXP-014 is indicative; the WITHIN-experiment HHI/win_rate diagnostics are the
+# primary readout. 4-datapoint 1h screening is noisy — apply the 0.05 threshold and
+# "promising -> bigger budget" rule with extra caution.
+# ============================================================================
+
+# ── Trading Universe (UNCHANGED — never touched) ──
+symbols:
+  - BTC/USDT
+  - ETH/USDT
+  - SOL/USDT
+  - AVAX/USDT
+  - LINK/USDT
+  - POL/USDT
+  - UNI/USDT
+  - AAVE/USDT
+  - LTC/USDT
+  - NEAR/USDT
+
+timeframe: "1h"                # 1h chain (paired with EXP-013/EXP-014)
+
+# ── Portfolio (UNCHANGED) ──
+initial_balance: 10000.0
+trading_fee_pct: 0.001
+slippage_pct: 0.0005
+
+# ── Data Engineering (UNCHANGED) ──
+data:
+  lookback_days: 365
+  missing_candle_policy:
+    ffill_limit: 3
+    stale_flag_limit: 20
+    segment_split_beyond: 20
+  paths:
+    raw: "data/01_raw"
+    intermediate: "data/02_intermediate"
+    features: "data/03_features"
+    normalized: "data/04_normalized"
+    splits: "data/05_splits"
+
+# ── Technical Indicators (UNCHANGED) ──
+indicators:
+  rsi_window: 14
+  sma_window: 20
+  ema_window: 20
+  stochastic_window: 14
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  roc_window: 10
+  williams_r_window: 14
+  disparity_sma_window: 20
+  ad: true
+  obv: true
+
+# ── Normalization (UNCHANGED) ──
+normalization:
+  method: "rolling_zscore"
+  window: 500
+
+# ── Train / Test Split (UNCHANGED) ──
+split:
+  test_ratio: 0.2
+  n_cv_folds: 5
+
+# ── TD3 / Algorithm (UNCHANGED — EXP-014 / champion EXP-007 hyperparameters) ──
+td3:
+  algorithm: "td3"
+  learning_rate:
+    actor: 0.0001
+    critic: 0.0003
+  lr_schedule: "linear"
+  gamma: 0.99
+  tau: 0.005
+  batch_size: 512
+  buffer_size: 100000
+  learning_starts: 10000
+  train_freq: 4
+  policy_delay: 2
+  target_noise_clip: 0.5
+  target_policy_noise: 0.2
+  action_noise_std: 0.1
+  total_timesteps: 200000      # screening budget
+  net_arch:
+    pi: [256, 128]
+    qf: [256, 128]
+
+# ── Environment — EXP-014 block with THE ONE CHANGE: momentum OFF -> ON (window 24) ──
+environment:
+  window_size: 50
+  reward_scaling: 1.0
+  max_position: 1.0
+  rebalance_threshold: 0.10
+  turnover_penalty_coef: 0.004
+  cross_sectional_momentum: true    # THE ONE CHANGE vs EXP-014 (was false)
+  momentum_window: 24               # 1 day at 1h (trend horizon; was 12, inert under csm=false)
+  allocation_mode: "scaled"         # EXP-014 champion: genuine partial risk management
+
+# ── Training ──
+training:
+  seeds: [42, 123]
+  cv_train_months: 2
+  cv_validation_months: 1
+  model_dir: "models"
+  mlflow_experiment_name: "td3_crypto_trading"
+  mlflow_tracking_uri: "mlruns"
+  progress_log_every_steps: 10000
+  max_folds: 2
+
+# ── Backtesting ──
+backtesting:
+  benchmark: "BTC/USDT"
+
+# ── Deployment ──
+deployment:
+  poll_interval_seconds: 3600  # 1h candle
+  model_path: "models/td3_best.zip"

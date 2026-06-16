@@ -1,29 +1,46 @@
 # ============================================================================
-# EXP-013 — DATA AXIS PIVOT: 1h baseline (champion EXP-007 config re-based at 1h)
+# EXP-014 — 1h CASH ESCAPE: allocation_mode renormalize -> scaled
 # ============================================================================
-# FRESH 1h EXPERIMENT CHAIN. The 1h fetch regenerates all parquet artifacts and
-# produces a NEW data_fingerprint, so this is NOT paired with EXP-001..012 (which
-# were all at 5m). EXP-013 is the in-fingerprint 1h BASELINE; the 1h chain builds
-# on it.
+# 1h CHAIN, second experiment. Base = EXP-013 (the 1h baseline / 1h champion).
+# data_fingerprint b279adaf24c6ed85 (PAIRED with EXP-013, NOT with the 5m chain
+# EXP-001..012 which used ec2e07548f555da2). Judged against the 1h reference only.
 #
-# DESIGN (strategist consultation, Option 1): the baseline carries the TRUE champion
-# EXP-007 environment block — renormalize allocation (forced ~full investment),
-# no-trade band 0.10, turnover_penalty 0.004, momentum OFF, TD3 — at the 200k
-# SCREENING budget (NOT EXP-007's 400k; mirrors how EXP-008 re-based at 200k).
-# The single experimental variable vs champion EXP-007 is timeframe: 5m -> 1h.
+# THE ONE CHANGE vs EXP-013: environment.allocation_mode "renormalize" -> "scaled".
 #
-# WHY renormalize (not the scaled+momentum line): a baseline must be a clean,
-# unconfounded reference. renormalize CANNOT hold cash, so its 1h val Sharpe is an
-# honest readout of "does a fully-invested agent find a directional edge at 1h" —
-# the exact question the data-axis pivot exists to answer. At 1h the per-unit-time
-# cost drag (which ruined renormalize at 5m, EXP-001..007) is ~12x lower, so this is
-# a genuinely different experiment from the 5m renormalize runs. The scaled cash
-# mechanic returns as EXP-014, judged cleanly against a 1h baseline that trades.
+# HYPOTHESIS. EXP-013 proved the 1h baseline loss is GROSS / DIRECTIONAL, not cost:
+# under renormalize the book is ~98%/~83% invested (cash_ratio_mean 0.020 / 0.173,
+# cash_min 0.0), total_cost only 33 / 122 (vs ~5160 at 5m EXP-001) on 7 / 38 trades,
+# yet the agent still loses -21% / -20% total return, all 4 folds negative, fold_1
+# (down-market) MaxDD 0.31-0.33. Cost is NOT the problem at 1h; the fully-invested
+# long basket has no directional edge and gets dragged through every selloff with
+# NO cash exit. `scaled` (fixed divisor n_assets*max_position, remainder stays cash)
+# gives the agent a genuine de-risk lever the renormalize sum cancels out.
 #
-# FOLD ANALYSIS: calendar-based folds are timeframe-invariant -> 7 folds available
-# (same as 5m); screening uses first 2. Per-fold ~1489 train / ~721 val candles at
-# 1h (vs ~17.5k/8.5k at 5m) -> 4-datapoint screening readout is noisier; apply the
-# 0.05 threshold and "promising -> confirm at bigger budget" rule with extra caution.
+# WHY THIS IS A DIFFERENT EXPERIMENT FROM 5m EXP-008 (where scaled -> all-cash):
+# At 5m, scaled's cash escape merely dodged a COST problem (5m renormalize bled
+# ~52% of capital to fees), so going all-cash was the trivially correct response to
+# an edge-less + expensive landscape -> money-market artifact, no information about
+# risk management. At 1h cost is ~12x lower and already small under renormalize, so
+# scaled's cash escape is NOT a cost dodge here. The open question: does scaled buy
+# real DRAWDOWN AVOIDANCE on the down-market folds (genuine risk management, useful
+# even without a long edge), or does it collapse to the same near-cash money-market
+# attractor (cash_ratio_mean > 0.85, single-digit n_trades) seen across 5m EXP-008..012?
+#
+# PRE-REGISTERED TWO-SIDED READOUT (decide before looking at headline Sharpe):
+#  (a) CASH-COLLAPSE / NO-LIFT: cash_ratio_mean > 0.85 AND n_trades single-digit AND
+#      actions/mean pinned ~0 -> the near-cash attractor crossed the timeframe axis;
+#      scaled is a money-market artifact at 1h too -> REJECT, conclude the
+#      no-edge result is timeframe-robust (escalate: signal/feature redesign or
+#      formal no-edge for this 10-asset universe at both horizons).
+#  (b) GENUINE DE-RISK: agent stays meaningfully invested in fold_0 (up/sideways) but
+#      cuts exposure in fold_1 (down-market) -> fold_1 MaxDD materially below EXP-013's
+#      0.31-0.33 AND fold_1 Sharpe materially above EXP-013's -3.4/-3.6, WITHOUT
+#      collapsing fold_0 to cash -> scaled is real risk management -> ADOPT if the
+#      0.05 mean-Sharpe + MaxDD-guard rule is met; else "promising -> confirm".
+#
+# NOTE: A 4-datapoint screening readout at 1h is noisier (~1489 train / ~721 val
+# candles/fold). Apply the 0.05 threshold and the "promising -> bigger budget" rule
+# with extra caution per the EXP-013 fold-analysis note.
 # ============================================================================
 
 # ── Trading Universe (UNCHANGED — never touched) ──
@@ -39,14 +56,14 @@ symbols:
   - LTC/USDT
   - NEAR/USDT
 
-timeframe: "1h"                # THE ONE CHANGE vs champion EXP-007 (was 5m)
+timeframe: "1h"                # 1h chain (paired with EXP-013)
 
 # ── Portfolio (UNCHANGED) ──
 initial_balance: 10000.0
 trading_fee_pct: 0.001
 slippage_pct: 0.0005
 
-# ── Data Engineering (UNCHANGED span, coarser bars) ──
+# ── Data Engineering (UNCHANGED) ──
 data:
   lookback_days: 365
   missing_candle_policy:
@@ -60,7 +77,7 @@ data:
     normalized: "data/04_normalized"
     splits: "data/05_splits"
 
-# ── Technical Indicators (UNCHANGED windows, now in 1h bars) ──
+# ── Technical Indicators (UNCHANGED) ──
 indicators:
   rsi_window: 14
   sma_window: 20
@@ -76,17 +93,17 @@ indicators:
   ad: true
   obv: true
 
-# ── Normalization (UNCHANGED; 500 bars = ~3 weeks at 1h — revisit as later lever) ──
+# ── Normalization (UNCHANGED) ──
 normalization:
   method: "rolling_zscore"
   window: 500
 
-# ── Train / Test Split ──
+# ── Train / Test Split (UNCHANGED) ──
 split:
   test_ratio: 0.2
   n_cv_folds: 5
 
-# ── TD3 / Algorithm (champion EXP-007 hyperparameters; SAC reverted — no benefit, 8x slower) ──
+# ── TD3 / Algorithm (UNCHANGED — EXP-013 / champion EXP-007 hyperparameters) ──
 td3:
   algorithm: "td3"
   learning_rate:
@@ -103,21 +120,21 @@ td3:
   target_noise_clip: 0.5
   target_policy_noise: 0.2
   action_noise_std: 0.1
-  total_timesteps: 200000      # screening budget (NOT EXP-007's 400k)
+  total_timesteps: 200000      # screening budget
   net_arch:
     pi: [256, 128]
     qf: [256, 128]
 
-# ── Environment — TRUE champion EXP-007 block (renormalize, momentum OFF) ──
+# ── Environment — EXP-013 block with THE ONE CHANGE: renormalize -> scaled ──
 environment:
-  window_size: 50              # 50 bars = ~2 days at 1h
+  window_size: 50
   reward_scaling: 1.0
   max_position: 1.0
-  rebalance_threshold: 0.10    # champion no-trade band
-  turnover_penalty_coef: 0.004 # champion penalty
-  cross_sectional_momentum: false   # champion: momentum OFF
-  momentum_window: 12          # inert while csm=false
-  allocation_mode: "renormalize"    # champion: forced ~full investment (clean edge probe)
+  rebalance_threshold: 0.10
+  turnover_penalty_coef: 0.004
+  cross_sectional_momentum: false
+  momentum_window: 12
+  allocation_mode: "scaled"    # THE ONE CHANGE vs EXP-013 (was "renormalize")
 
 # ── Training ──
 training:

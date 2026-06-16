@@ -4,10 +4,53 @@ Journal aller Experimente des autonomen Optimierungs-Loops. Regeln: siehe [PROTO
 Maschinenlesbare Version: [ledger.jsonl](ledger.jsonl). Modelle: `models/<exp_id>/` (nie überschrieben).
 
 Champion **5m-Kette** (fp ec2e07548f555da2): **EXP-007 (mean val Sharpe −0.85)** — EXP-005-Config, 400k Steps
-Champion **1h-Kette** (fp b279adaf24c6ed85): **EXP-013 (mean val Sharpe −2.33)** — 1h-Baseline, renormalize
+Champion **1h-Kette** (fp b279adaf24c6ed85): **EXP-014 (mean val Sharpe −1.83)** — 1h, scaled Cash-Ausweg
 > ACHTUNG: Die beiden Ketten haben unterschiedliche data_fingerprints (5m vs 1h) → Sharpe-Werte NICHT
 > direkt vergleichbar. Innerhalb jeder Kette gilt der jeweilige Champion. 5m-RL-Raum erschöpft (12 Exp,
 > TD3+SAC); 1h-Kette ab EXP-013 offen.
+
+---
+
+## EXP-014 — 2026-06-16 — 1h CASH-AUSWEG: allocation_mode renormalize → scaled
+**Hypothese:** EXP-013 belegte: der 1h-Baseline-Verlust ist BRUTTO/DIREKTIONAL, nicht Kosten
+  (renormalize ~98%/~83% investiert, total_cost nur 33/122, dennoch −21%/−20% Return, fold_1
+  MaxDD 0.31–0.33). `scaled` (fester Divisor n_assets·max_position, Rest bleibt Cash) gibt dem
+  Agenten einen echten De-Risk-Hebel, den die renormalize-Summe aufhebt. Zweiseitiges Kill-
+  Kriterium vorab registriert: (a) Cash-Kollaps wie 5m (cash_ratio_mean > 0.85) → Artefakt;
+  (b) echtes De-Risking (fold_0 investiert, fold_1 Cash, MaxDD/Sharpe besser) → ADOPT.
+**Änderung:** environment.allocation_mode: "renormalize" → "scaled"   (Basis: EXP-013, 1h-Champion)
+**Basis:** Commit b118a66, data_fingerprint `b279adaf24c6ed85` (GEPAART mit EXP-013, NICHT mit der
+  5m-Kette). Strukturelle Execution-Änderung → Headline-Vergleich indikativ, per-fold-Diagnostik primär.
+**Budget:** 200k Steps × 2 Seeds × 2 Folds (~721 val Candles/Fold — 4-Datenpunkt-Readout, Vorsicht)
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **−1.83** (std 0.20) | MaxDD **0.105** | CPR 0.944
+  Pro Fold: S42 F0 **−0.45** (CPR 0.996, MaxDD 0.046) / F1 −2.82 (CPR 0.892, MaxDD 0.170)
+            S123 F0 −1.67 (CPR 0.982, MaxDD 0.038) / F1 −2.40 (CPR 0.907, MaxDD 0.165)
+  3 von 4 Folds besser als EXP-013 (gepaart: S42/F0 +1.39, S42/F1 +0.58, S123/F1 +1.18;
+  einzige Regression S123/F0 −1.16). ALLE 4 Folds weiter negativ.
+**Entscheidung:** ⭐ ADOPTIERT → neuer 1h-Champion. Delta +0.50 > 0.05-Schwelle, MaxDD 0.105 vs
+  0.246 (−57 %, weit innerhalb der 20-%-Guard), kein Crash/NaN. **Kill-Kriterium (a) Cash-Kollaps
+  FEUERT NICHT — und damit GERADE KEIN 5m-Artefakt:** `perf/cash_ratio_mean` **0.514 / 0.508**
+  (< 0.85, cash_min 0.246/0.140) → im Down-Markt-Fold ~50 % investiert, ~50 % Cash. (5m-scaled lag
+  bei 0.85–0.97 → All-Cash-Artefakt, EXP-008 trotz Headline-Sieg abgelehnt. Hier NICHT.)
+  **Anti-Skill-Verdacht WIDERLEGT:** per-fold CPR zeigt fold_0 (Up/Sideways) ~flach (0.996/0.982,
+  MaxDD 0.038–0.046 = niedrige Teilnahme, kein Verlust) und fold_1 (Down) kontrollierter ~50%-
+  Verlust mit HALBIERTEM Drawdown — also regime-gerechte DIFFERENZIERTE Exposure-Senkung, KEIN
+  Hineinkaufen in den Selloff. Vorläufig bis Confirmation (1M Steps, 5 Seeds).
+**Modelle:** `models/exp_014/`
+**MLflow:** Runs `seed_42` (83bef5b2), `seed_123` (3fcc70ed), Experiment `td3_crypto_trading`
+**Learnings:** **`scaled` ist am 1h-Horizont echtes Risikomanagement, NICHT das 5m-All-Cash-Artefakt.**
+  Der Unterschied zur 5m-Kette: dort umging `scaled` ein KOSTEN-Problem → All-Cash trivial optimal;
+  bei 1h sind Kosten bereits vernachlässigbar (total_cost 25/30 vs 5160 bei 5m), also verdient sich
+  der Cash-Ausweg nur als ECHTE Drawdown-Vermeidung — und tut das (fold_1 −21%→−11% Return,
+  MaxDD 0.33→0.17). **Aber weiter KEIN Direktions-Edge:** win_rate 0.57–0.63, profit_factor 0.53–1.99
+  auf 7–8 Trades, alle Folds negativ, critic konvergiert (~1.5–2.0e-6). Der Agent MANAGT jetzt Risiko,
+  hat aber keinen GRUND, Gewinner zu wählen. **Verzweigung → EXP-015 (Signal-Branch):**
+  cross_sectional_momentum AN, Trend-Horizont momentum_window 12 → 24 (= 1 Tag bei 1h). Anders als
+  5m EXP-006/010 läuft der Signal-Test jetzt auf einem Substrat, das WIRKLICH teilnimmt (~50 %) und
+  Cash NUTZT → die Bedingungen, ein Cross-Sectional-Ranking auszudrücken, existieren erstmals. Feuert
+  auch das NO-LIFT (HHI ~0.10, win_rate ~0.5) → No-Edge-Schluss über BEIDE Timeframes × BEIDE Substrate
+  + Signal-Hebel → ESKALATION: formaler No-Edge für RL-on-TI, strukturelles Umdenken statt RL-Tuning.
 
 ---
 

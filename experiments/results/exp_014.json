@@ -1,0 +1,48 @@
+{
+  "experiment_id": "exp_014",
+  "timestamp": "2026-06-16T11:38:15+00:00",
+  "git_commit": "b118a66",
+  "config_path": "experiments/configs/exp_014_cash_escape_1h.yml",
+  "data_fingerprint": "b279adaf24c6ed85",
+  "model_dir": "models/exp_014",
+  "models": {
+    "42": "models/exp_014/td3_seed42_best.zip",
+    "123": "models/exp_014/td3_seed123_best.zip"
+  },
+  "n_seeds": 2,
+  "n_folds": 2,
+  "aggregate": {
+    "mean_mean_sharpe_ratio": -1.8327431308005941,
+    "std_mean_sharpe_ratio": 0.19883182488209927,
+    "mean_mean_cpr": 0.944104449478586,
+    "std_mean_cpr": 0.00016630567010089692,
+    "mean_mean_max_drawdown": 0.10485872074484096,
+    "std_mean_max_drawdown": 0.003196590225288086
+  },
+  "per_seed": {
+    "42": [
+      {
+        "sharpe_ratio": -0.44775640801161026,
+        "cpr": 0.9960706599036093,
+        "max_drawdown": 0.04575755524930846
+      },
+      {
+        "sharpe_ratio": -2.8200662038253794,
+        "cpr": 0.8918056277133608,
+        "max_drawdown": 0.17035306669094963
+      }
+    ],
+    "123": [
+      {
+        "sharpe_ratio": -1.6674397706134212,
+        "cpr": 0.9819608049842234,
+        "max_drawdown": 0.03785334058532646
+      },
+      {
+        "sharpe_ratio": -2.395710140751966,
+        "cpr": 0.9065807053131503,
+        "max_drawdown": 0.16547092045377929
+      }
+    ]
+  }
+}
