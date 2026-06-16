@@ -1,0 +1,48 @@
+{
+  "experiment_id": "exp_015",
+  "timestamp": "2026-06-16T13:22:25+00:00",
+  "git_commit": "7097ed8",
+  "config_path": "experiments/configs/exp_015_xsec_momentum_1d.yml",
+  "data_fingerprint": "b279adaf24c6ed85",
+  "model_dir": "models/exp_015",
+  "models": {
+    "42": "models/exp_015/td3_seed42_best.zip",
+    "123": "models/exp_015/td3_seed123_best.zip"
+  },
+  "n_seeds": 2,
+  "n_folds": 2,
+  "aggregate": {
+    "mean_mean_sharpe_ratio": -1.6115340618782532,
+    "std_mean_sharpe_ratio": 0.25652452979337803,
+    "mean_mean_cpr": 0.9559970673259905,
+    "std_mean_cpr": 0.01296747760560818,
+    "mean_mean_max_drawdown": 0.09307879265274589,
+    "std_mean_max_drawdown": 0.01552937461366341
+  },
+  "per_seed": {
+    "42": [
+      {
+        "sharpe_ratio": -0.9016457699210112,
+        "cpr": 0.9907706827974057,
+        "max_drawdown": 0.04803111076272658
+      },
+      {
+        "sharpe_ratio": -1.808373294248739,
+        "cpr": 0.9471584070657918,
+        "max_drawdown": 0.10706772531543839
+      }
+    ],
+    "123": [
+      {
+        "sharpe_ratio": -1.19827122685486,
+        "cpr": 0.9818671662293844,
+        "max_drawdown": 0.07680869646087946
+      },
+      {
+        "sharpe_ratio": -2.5378459564884026,
+        "cpr": 0.9041920132113802,
+        "max_drawdown": 0.14040763807193915
+      }
+    ]
+  }
+}

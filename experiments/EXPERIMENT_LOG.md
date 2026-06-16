@@ -11,6 +11,58 @@ Champion **1h-Kette** (fp b279adaf24c6ed85): **EXP-014 (mean val Sharpe −1.83)
 
 ---
 
+## EXP-015 — 2026-06-16 — 1h SIGNAL: cross_sectional_momentum AN, 1-Tages-Trend-Horizont (momentum_window 24)
+**Hypothese:** EXP-014 belegte, dass der Agent jetzt RISIKO MANAGT (de-riskt 98→51 % investiert
+  in den fold_1-Selloff, MaxDD 0.246→0.105), aber weiter keinen GRUND hat, Gewinner zu wählen
+  (win_rate 0.57–0.63 = Münzwurf, alle 4 Folds negativ). Alle TIs sind PRO ASSET rolling-z-skaliert
+  → der Agent sieht nie die QUERSCHNITTLICHE relative Stärke. Cross-Sectional-Momentum (quer über die
+  10 Assets z-skaliert, window 24 = 1 Tag bei 1h) gibt ihm erstmals ein Relative-Stärke-Ranking — UND
+  diesmal auf einem Substrat, das WIRKLICH teilnimmt (~50 %) und Cash NUTZT (anders als 5m EXP-006/010,
+  die auf kosten-vergifteten bzw. ~90%-Cash-Substraten liefen). Zweiseitiges Kill-Kriterium vorab
+  registriert: (a) NO-LIFT/NO-CONCENTRATION (HHI ~0.10, win_rate ~0.5, Sharpe nicht > −1.83 + 0.05)
+  → Signal auch bei 1h nicht prädiktiv, Observation NICHT der Bottleneck; (b) ECHTES Signal (HHI ≫ 0.10
+  und/oder win_rate löst sich von 0.5, Sharpe-Lift) → erstmals Direktions-Edge → ADOPT.
+**Änderung:** environment.cross_sectional_momentum: false → true (momentum_window 12 → 24)   (Basis: EXP-014, 1h-Champion)
+**Basis:** Commit 7097ed8, data_fingerprint `b279adaf24c6ed85` (GEPAART mit EXP-013/EXP-014). ACHTUNG:
+  csm=true erweitert den Obs-Vektor um n_assets → STRUKTURELLE/Observations-Änderung, auf der
+  Observation-Achse NICHT mit EXP-014 gepaart (frischer Struktur-Baseline, gleiches Caveat wie 5m
+  EXP-006/010). Headline-Vergleich indikativ; die WITHIN-Experiment-Diagnostik (HHI/win_rate) ist primär.
+**Budget:** 200k Steps × 2 Seeds × 2 Folds (~694 val Candles/Fold — 4-Datenpunkt-Readout, std 0.26)
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **−1.61** (std 0.26) | MaxDD **0.093** | CPR 0.956
+  Pro Fold: S42 F0 **−0.90** (CPR 0.991, MaxDD 0.048) / F1 −1.81 (CPR 0.947, MaxDD 0.107)
+            S123 F0 −1.20 (CPR 0.982, MaxDD 0.077) / F1 **−2.54** (CPR 0.904, MaxDD 0.140)
+  Gepaart 2:2 vs EXP-014: besser S42/F1 (+1.01), S123/F0 (+0.47); schlechter S42/F0 (−0.45),
+  S123/F1 (−0.14). ALLE 4 Folds weiter negativ. Delta +0.22 = ~0.85σ (std 0.26) → im Rauschen.
+**Entscheidung:** ❌ ABGELEHNT (Rausch-Ablehnung). **Mechanisch ADOPTIERT die Regel** (Delta +0.22 > 0.05;
+  MaxDD 0.093 vs 0.105 BESSER; kein Crash/NaN), ABER das vorab registrierte **Kill-Kriterium (a)
+  NO-LIFT/NO-CONCENTRATION FEUERT** und übersteuert per Ehrlichkeitsregel das verrauschte Headline-Plus:
+  **Per-Asset-Trade-HHI 0.109 / 0.149** auf nur **16 / 22 Trades** (~2 Trades/Asset = Integer-Count-
+  Rauschen, identisch zum uniformen 0.10-Floor der GESAMTEN Kette). **win_rate 0.83 / 0.44** auf 6/9
+  Trades = Geldmarkt-Artefakt, KEIN Lift vom 0.5-Münzwurf. `actions/mean` bei −0.05 / +0.02 gepinnt
+  (derselbe Near-Zero-Attraktor wie EXP-014), critic konvergiert sauber 1.3–1.5e-6 = NICHT untertrainiert.
+  **cash_ratio_mean 0.559 / 0.508** (< 0.85) → das Feature drückt den Agenten NICHT zurück in All-Cash;
+  die EXP-014-Teilnahme bleibt erhalten. Der Agent SIEHT das Ranking und IGNORIERT es. **Champion bleibt EXP-014.**
+**Modelle:** `models/exp_015/`
+**MLflow:** Runs `seed_42` (8031a755), `seed_123` (bb3ac823), Experiment `td3_crypto_trading`
+**Learnings — STRATEGISCHER ABSCHLUSS:** **Cross-Sectional-Momentum erzeugt auf KEINEM Horizont und
+  KEINEM Substrat Winner-Konzentration** — bestätigt über 5m (renormalize EXP-006, ~90%-Cash scaled
+  EXP-010) UND 1h (echtes ~50%-Teilnahme-Substrat EXP-015). Das war der sauberste mögliche Signal-Test
+  (risikomanagender Agent, der Cash NUTZT und teilnimmt) — und er feuert NO-LIFT. Damit ist die
+  **Observation/Signal-Achse für dieses Feature über beide Timeframes erschöpft.** Gesamtbild über 15
+  Experimente: der RL-Agent extrahiert AUSSCHLIESSLICH Risikomanagement (Cash-Timing, EXP-014), NIE
+  Security-Selection (win_rate ~0.5, HHI ~0.10 überall, Critics konvergiert, über TD3+SAC, beide
+  Substrate, mit/ohne Signal). **FORMALER NO-EDGE-SCHLUSS für RL-on-TI in diesem 10-Asset-Universum** —
+  kein fehlender Hyperparameter, der TI-Feature-Satz trägt keine cross-asset-prädiktive Information.
+  **Empfehlung beim Wiederaufnehmen (kein EXP-016 gestartet, Loop-Ende auf User-Wunsch):** RL-Tuning
+  STOPPEN. Zuerst eine billige OFFLINE-SUPERVISED-PROBE — kann IRGENDEIN Modell 1-Tages-Forward-Cross-
+  Sectional-Returns aus den Features über Zufall vorhersagen? Wenn nein, findet die RL es auch nie.
+  Wenn ja → neue Signalquelle in die Observation (Funding-Rates zuerst, dann Cross-Asset-Korrelation /
+  Regime-Labels / supervised Edge-Modell). EXP-014-Confirmation (1M/5 Seeds) erst NACH der strategischen
+  Richtungsentscheidung. Strukturelle Änderung → Orchestrator-Sign-off.
+
+---
+
 ## EXP-014 — 2026-06-16 — 1h CASH-AUSWEG: allocation_mode renormalize → scaled
 **Hypothese:** EXP-013 belegte: der 1h-Baseline-Verlust ist BRUTTO/DIREKTIONAL, nicht Kosten
   (renormalize ~98%/~83% investiert, total_cost nur 33/122, dennoch −21%/−20% Return, fold_1
