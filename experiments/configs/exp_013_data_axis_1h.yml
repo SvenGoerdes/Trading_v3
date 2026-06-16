@@ -1,0 +1,225 @@
+# ──────────────────────────────────────────────
+# Trading Universe
+# ──────────────────────────────────────────────
+symbols:
+  - BTC/USDT
+  - ETH/USDT
+  - SOL/USDT
+  - AVAX/USDT
+  - LINK/USDT
+  - POL/USDT
+  - UNI/USDT
+  - AAVE/USDT
+  - LTC/USDT
+  - NEAR/USDT
+
+timeframe: "1h"               # THE ONE CHANGE (vs the whole chain): 5m -> 1h
+
+# ──────────────────────────────────────────────
+# Portfolio
+# ──────────────────────────────────────────────
+initial_balance: 10000.0
+trading_fee_pct: 0.001       # 0.1% taker fee  (UNCHANGED — never touched)
+slippage_pct: 0.0005         # 0.05% slippage estimate  (UNCHANGED — never touched)
+
+# ──────────────────────────────────────────────
+# Data Engineering
+# ──────────────────────────────────────────────
+data:
+  lookback_days: 365
+  missing_candle_policy:
+    ffill_limit: 3
+    stale_flag_limit: 20
+    segment_split_beyond: 20
+  paths:
+    raw: "data/01_raw"
+    intermediate: "data/02_intermediate"
+    features: "data/03_features"
+    normalized: "data/04_normalized"
+    splits: "data/05_splits"
+
+# ──────────────────────────────────────────────
+# Technical Indicators
+# ──────────────────────────────────────────────
+indicators:
+  rsi_window: 14
+  sma_window: 20
+  ema_window: 20
+  stochastic_window: 14
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  roc_window: 10
+  williams_r_window: 14
+  disparity_sma_window: 20
+  ad: true
+  obv: true
+
+# ──────────────────────────────────────────────
+# Normalization
+# ──────────────────────────────────────────────
+normalization:
+  method: "rolling_zscore"
+  window: 500
+
+# ──────────────────────────────────────────────
+# Train / Test Split
+# ──────────────────────────────────────────────
+split:
+  test_ratio: 0.2
+  n_cv_folds: 5
+
+# ============================================================================
+# EXP-013 PROPOSAL — DATA AXIS: TIMEFRAME 5m -> 1h  (STRUCTURAL / PIPELINE RE-RUN)
+# ============================================================================
+# THIS CONFIG IS THE ARTIFACT FOR THE PRE-REGISTERED ESCALATION TRIGGERED BY
+# EXP-012's KILL-(a) NO-LIFT FINDING. It is RUNNABLE ONLY AFTER the data and
+# feature pipelines are re-run at 1h (new parquet artifacts, NEW data_fingerprint).
+#
+# >>> ORCHESTRATOR / USER SIGN-OFF REQUIRED — THIS BREAKS PAIRING. <<<
+# Changing timeframe regenerates 01_raw..05_splits → the data_fingerprint will
+# NO LONGER be ec2e07548f555da2. Every comparison against EXP-001..012 becomes
+# CROSS-FINGERPRINT and is therefore only indicative on the headline metric, NOT
+# paired. This is the deliberate, pre-registered cost of moving off the exhausted
+# 5m policy/algorithm axis onto the data axis. A fresh in-fingerprint champion
+# baseline must be established at 1h before any 1h challenger is judged.
+#
+# WHY (pre-registered, fired by EXP-012): The algorithm/policy branch is now
+# EXHAUSTED across the deterministic (TD3: EXP-001..011) AND the maximum-entropy
+# stochastic (SAC: EXP-012) actor-critic families. SAC's entropy bonus did NOT
+# break the near-cash attractor: cash_ratio_mean 0.89/0.94 (both > 0.85),
+# n_trades 11/10 over 200k steps × 10 assets, trade-HHI 0.157/0.180 (a hair above
+# uniform 0.10, but on only ~10 trades = small-sample noise, NOT a winner-
+# concentration regime), critic_loss → 1e-9 by 200k = cleanly converged. Both
+# the deterministic and the stochastic policy class converge to "hold almost
+# everything in cash" because that is the risk/return-optimal response to an
+# edge-less reward landscape with positive costs. Twelve experiments of accumulated
+# evidence (win_rate ~0.5 on real trade counts, timing a coin-flip, HHI ~0.10 on
+# every variant) point at NO TRADABLE DIRECTIONAL EDGE in this 10-asset universe
+# AT THE 5m TIMEFRAME with these features — not at a missing hyperparameter.
+#
+# HYPOTHESIS: 5m crypto bars are dominated by microstructure noise; any genuine
+# cross-asset momentum/mean-reversion structure lives at a coarser horizon where
+# the signal-to-noise ratio is higher and the per-step cost drag (0.15%/rebalance)
+# is amortised over 12x fewer decision points. Moving to 1h bars is the cheapest
+# DATA-axis lever that could surface exploitable structure the 5m feed cannot.
+# Expected effect IF structure exists: cash_ratio_mean < 0.85 with trade-HHI
+# WELL above 0.10 on real (hundreds) trade counts, win_rate / profit_factor
+# detaching from the 0.5 coin-flip, mean val Sharpe positive across BOTH seeds.
+#
+# ── PIPELINE RE-RUN REQUIRED (no model/algo code change; this is the DATA axis) ──
+# 1. Set timeframe: "1h" (above). Re-run data_engineering then feature_engineering:
+#       TRADING_CONFIG=experiments/configs/exp_013_data_axis_1h.yml \
+#         uv run python -m src.run_pipeline --pipeline=data_engineering
+#       TRADING_CONFIG=experiments/configs/exp_013_data_axis_1h.yml \
+#         uv run python -m src.run_pipeline --pipeline=feature_engineering
+#    This produces NEW 03_features/04_normalized/05_splits and a NEW fingerprint.
+# 2. window_size stays 50 BARS — at 1h that is ~2 days of context (vs ~4h at 5m).
+#    This is an INTENTIONAL, hypothesis-consistent consequence of the timeframe
+#    change (coarser horizon), NOT a second tuned lever; do not "compensate" it.
+# 3. ALGORITHM REVERTS TO TD3 (default). EXP-012 proved SAC delivers no
+#    participation/edge advantage here AND costs ~8h/screening run (30 steps/sec)
+#    vs TD3's ~80min. Re-running the data axis on SAC would multiply an already
+#    fingerprint-resetting experiment by 7-8x wall-clock for zero demonstrated
+#    benefit. Establish the 1h baseline on the FAST, well-understood TD3 actor;
+#    only revisit SAC if 1h shows genuine structure that TD3 underfits.
+# 4. Carry the EXP-010/011/012 structural base UNCHANGED on every other axis
+#    (scaled allocation, no-trade band 0.10, turnover_penalty 0.001, cross-
+#    sectional momentum ON @ window 48). The SINGLE experimental variable is the
+#    candle timeframe (5m -> 1h). NOTE momentum_window 48 at 1h = ~2 days trend
+#    horizon (was ~4h at 5m) — again an intrinsic, hypothesis-aligned consequence
+#    of the coarser bar, not an independent change.
+#
+# ── PRE-REGISTERED DECISION CRITERIA (judge by PARTICIPATION + CONCENTRATION on
+#    REAL trade counts, not raw Sharpe — same bar as EXP-008..012; against the
+#    NEW 1h in-fingerprint baseline, since pairing with the 5m chain is broken) ──
+#   ADOPT: cash_ratio_mean < 0.85 AND per-asset trade HHI WELL above 0.10 on
+#     trade counts in the hundreds AND mean val Sharpe positive reproducing across
+#     BOTH seeds -> FIRST genuine selective-trading edge in the whole program ->
+#     ADOPT + queue 1M-step / 5-seed / all-folds confirmation before building on it.
+#   KILL (a) NO-LIFT: cash_ratio_mean > 0.85, n_trades single-to-low-double-digit,
+#     HHI ~0.10, actions/mean pinned ~0 -> the near-cash attractor survives the
+#     coarser timeframe too -> REJECT. DATA-AXIS (timeframe) lever exhausted on
+#     this feature set -> the edge problem is FEATURE PREDICTIVENESS, not bar
+#     resolution -> escalate to a new feature/observation hypothesis OR formal
+#     no-edge conclusion for this universe, per user.
+#   KILL (b) CHURN-NO-EDGE: participates (cash < 0.85, n_trades in the hundreds)
+#     but trades stay UNCONCENTRATED (HHI ~0.10) and Sharpe negative with total_cost
+#     climbing -> 1h surfaced activity but not edge -> REJECT; bottleneck is signal
+#     predictiveness, not timeframe -> feature axis, not more data-resolution tuning.
+#
+# COMPARISON BASE: CROSS-FINGERPRINT vs the entire 5m chain (NOT paired — new
+# data_fingerprint). Establish a fresh 1h baseline in-fingerprint first. Champion
+# of record remains EXP-007 (mean val Sharpe -0.85) until a 1h challenger is judged
+# against its own 1h baseline.
+# ============================================================================
+
+# ──────────────────────────────────────────────
+# TD3 / Algorithm Hyperparameters
+# ──────────────────────────────────────────────
+td3:
+  algorithm: "td3"            # REVERTED from SAC — see code spec note 3 above
+
+  # Decoupled learning rates
+  learning_rate:
+    actor: 0.0001
+    critic: 0.0003
+
+  lr_schedule: "linear"
+
+  gamma: 0.99
+  tau: 0.005
+  batch_size: 512
+  buffer_size: 100000
+  learning_starts: 10000
+  train_freq: 4
+  policy_delay: 2
+  target_noise_clip: 0.5
+  target_policy_noise: 0.2
+  action_noise_std: 0.1
+  total_timesteps: 200000     # standard screening budget (unchanged)
+  net_arch:
+    pi: [256, 128]            # screening-size MLP (NOT the rejected EXP-011 [400,300])
+    qf: [256, 128]
+
+# ──────────────────────────────────────────────
+# Environment
+# ──────────────────────────────────────────────
+# All environment settings carried UNCHANGED from EXP-010/011/012 (scaled line +
+# momentum on). Only the timeframe (top of file) changes.
+environment:
+  window_size: 50
+  reward_scaling: 1.0
+  max_position: 1.0
+  rebalance_threshold: 0.10
+  turnover_penalty_coef: 0.001
+  cross_sectional_momentum: true
+  momentum_window: 48
+  allocation_mode: "scaled"
+
+# ──────────────────────────────────────────────
+# Training
+# ──────────────────────────────────────────────
+training:
+  seeds: [42, 123]
+  cv_train_months: 2
+  cv_validation_months: 1
+  model_dir: "models"
+  mlflow_experiment_name: "td3_crypto_trading"
+  mlflow_tracking_uri: "mlruns"
+  progress_log_every_steps: 10000
+  max_folds: 2
+
+# ──────────────────────────────────────────────
+# Backtesting
+# ──────────────────────────────────────────────
+backtesting:
+  benchmark: "BTC/USDT"
+
+# ──────────────────────────────────────────────
+# Deployment
+# ──────────────────────────────────────────────
+deployment:
+  poll_interval_seconds: 3600  # 1h candle
+  model_path: "models/td3_best.zip"

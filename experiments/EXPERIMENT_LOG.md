@@ -7,6 +7,55 @@ Aktueller Champion: **EXP-007 (mean val Sharpe −0.85)** — wie EXP-005, train
 
 ---
 
+## EXP-012 — 2026-06-16 — Algorithmus-Swap TD3 → SAC (Max-Entropy-Actor)
+**Hypothese:** EXP-011 feuerte Kill-(a) NO-LIFT — verdoppelte Actor-Kapazität ([256,128]→[400,300])
+  hob den Agenten NICHT vom Near-Cash-Attraktor; Repräsentations-Kapazität ist NICHT der Bottleneck.
+  Letzter ungetesteter Hebel im Policy/Algorithmus-Branch: die Algorithmus-KLASSE. TD3s
+  deterministischer Actor kollabiert bei edge-loser Reward-Landschaft auf die varianz-minimale
+  Cash-Politik. SACs Maximum-Entropy-Ziel belohnt eine stochastische Politik und ist weniger
+  kollaps-anfällig — falls IRGENDEINE handelbare Struktur existiert, ist die Entropie-Bonus + Twin-
+  Soft-Q der wahrscheinlichste Cross-Familien-Hebel, sie sichtbar zu machen. Erwartung: cash_ratio_mean
+  < 0.85, Trade-HHI ≫ 0.10, positive Sharpe über BEIDE Seeds.
+**Änderung:** td3.algorithm: "td3" → "sac"   (Basis: EXP-010 `scaled` + Momentum-AN, net_arch [256,128])
+**Basis:** Commit 7bb8e99, data_fingerprint `ec2e07548f555da2` (SAUBER mit EXP-010 gepaart auf jeder
+  Achse außer der Algorithmus-Klasse). Caveats wie EXP-008..011: Budget 200k vs Champion-Headline 400k
+  (EXP-007), `scaled`-Execution, SAC NICHT mit dem renormalize-Champion auf der Algorithmus-Achse
+  gepaart → Headline-Vergleich nur indikativ.
+**Budget:** 200k Steps × 2 Seeds × 2 Folds (~8h Wall-Clock: SAC 30 steps/sec, 7–8× langsamer als TD3)
+**Status:** ✅ ABGESCHLOSSEN
+**Ergebnis:** mean val Sharpe **−0.61** (std 0.65) | MaxDD **0.066** | CPR 0.981
+  Pro Fold: S42 F0 **−1.41** (CPR 0.986, MaxDD 0.042) / F1 −1.10 (CPR 0.954, MaxDD 0.139)
+            S123 F0 **+0.97** (CPR 1.007, MaxDD 0.023) / F1 −0.90 (CPR 0.978, MaxDD 0.060)
+  1 von 4 Folds profitabel; große Seed-Divergenz auf fold_0 (S42 −1.41 vs S123 +0.97 = der einzige
+  positive Fold reproduziert NICHT über Seeds).
+**Entscheidung:** ❌ ABGELEHNT — **Kill-Kriterium (a) NO-LIFT (vorab registriert) FEUERT.** SACs
+  Entropie-Ziel brach den Near-Cash-Attraktor NICHT: `perf/cash_ratio_mean` **0.894 / 0.936** (beide
+  > 0.85, cash_min 0.70/0.80 → ~6–11 % netto investiert, identisch zur TD3-scaled-Linie EXP-008..010),
+  `perf/n_trades` (full-eval) **10**, per-asset Trades **11/10** über 200k Steps × 10 Assets,
+  `actions/mean` **+0.002 / −0.034** über alle 200k Steps in BEIDEN Seeds gepinnt (gleicher konvergierter
+  Attraktor wie TD3), critic_loss → **1e-9** ab ~200k = sauber konvergiert, NICHT untertrainiert.
+  Trade-HHI 0.157/0.180 liegt zwar über uniform 0.10, ist aber auf nur ~10 Trades Integer-Count-Rauschen,
+  KEINE Winner-Konzentration. Der S42/F1-MaxDD 0.139 ist NICHT mehr Deployment (cash dort 0.894), sondern
+  EIN adverser Move (reward_skew −9.0, kurtosis 2891) auf winziger Position — gleiches Single-Adverse-
+  Move-Muster wie EXP-009/010. win_rate 1.0 / profit_factor sind Geldmarktfonds-Artefakt auf ~4 Trades.
+  Headline −0.61 schlägt zwar EXP-007 −0.85 (+0.24 > 0.05), aber das ist die Sharpe eines ~90 %-Cash-
+  Buchs und doppelt un-gepaart gegen den Champion → Teilnahme-Bar übersteuert. **Champion bleibt EXP-007.**
+**Modelle:** `models/exp_012/`
+**MLflow:** Runs `seed_42` (aa7e73c1), `seed_123` (652545b3), Experiment `td3_crypto_trading`
+**Learnings:** **Der Near-Cash-Attraktor überlebt über BEIDE Actor-Critic-Familien** — den
+  deterministischen (TD3, EXP-001..011) UND den Maximum-Entropy-stochastischen (SAC, EXP-012), beide mit
+  sauber konvergierten Critics. Beide Policy-Klassen lernen „fast alles in Cash halten" als
+  risiko-/return-optimale Antwort auf eine edge-lose Reward-Landschaft mit positiven Kosten. Damit ist
+  der **POLICY/ALGORITHMUS-BRANCH ERSCHÖPFT.** Die akkumulierte Evidenz über 12 Experimente (win_rate ~0.5
+  auf echten Trade-Counts, Timing Münzwurf, HHI ~0.10 auf jeder Variante) ist ein publizierbares
+  Negativ-Resultat: **kein handelbarer Direktions-Edge in diesem 10-Asset-Universum AM 5m-Timeframe mit
+  diesen Features** — NICHT (bewiesen) bei jedem Horizont. **Verzweigung → ESKALATION AN USER (strategische
+  Gabel, bricht Paarung):** (A) DATEN-Achse: Timeframe 5m → 1h (Pipeline-Re-Run, NEUER Fingerprint,
+  beendet Paarung mit EXP-001..012; billig auf TD3 ~80min; Config bereit: `exp_013_data_axis_1h.yml`);
+  (B) formaler No-Edge-Schluss für das 5m-Universum (RL-Suche stoppen). **Strategist-Empfehlung: A zuerst.**
+
+---
+
 ## EXP-011 — 2026-06-12 — Breitere Netzarchitektur (net_arch pi/qf [256,128] → [400,300])
 **Hypothese:** EXP-010 zeigte: die Observation ist nicht der Bottleneck (Cross-Sectional-Momentum
   erzeugt auf keinem Horizont Winner-Konzentration). Eskalation in den Policy/Algorithmus-Branch,
